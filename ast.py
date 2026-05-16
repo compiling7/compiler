@@ -1,16 +1,18 @@
-"""AST nodes for Rust-like language"""
+"""Rust 类语言的 AST 节点定义"""
+
+from typing import Any
 
 
 class ASTNode:
-    """Base class for all AST nodes"""
+    """所有 AST 节点的基类"""
     node_name = "ASTNode"
 
     def __repr__(self):
         return f"<{self.node_name}>"
 
-    def to_dict(self):
-        """Convert node to dictionary for visualization"""
-        result = {"name": self.node_name}
+    def to_dict(self) -> dict:
+        """将节点转换为字典格式，用于可视化"""
+        result: dict = {"name": self.node_name}
         for attr, value in self.__dict__.items():
             if attr != 'node_name' and not attr.startswith('_'):
                 if isinstance(value, ASTNode):
@@ -23,148 +25,148 @@ class ASTNode:
 
 
 class ProgramNode(ASTNode):
-    """Root node for the entire program"""
+    """程序根节点 - 表示整个程序"""
     node_name = "Program"
 
-    def __init__(self, declarations):
-        self.declarations = declarations  # list of FunctionDeclNode
+    def __init__(self, declarations: list):
+        self.declarations = declarations  # 函数声明列表 FunctionDeclNode
 
 
 class FunctionDeclNode(ASTNode):
-    """Function declaration node"""
+    """函数声明节点"""
     node_name = "FunctionDecl"
 
-    def __init__(self, name, params, return_type, body):
-        self.name = name
-        self.params = params  # list of ParamNode
-        self.return_type = return_type  # TypeNode or None
-        self.body = body  # BlockStmtNode
+    def __init__(self, name: str, params: list, return_type, body):
+        self.name = name  # 函数名
+        self.params = params  # 参数列表 ParamNode
+        self.return_type = return_type  # 返回类型 TypeNode 或 None
+        self.body = body  # 函数体 BlockStmtNode
 
 
 class ParamNode(ASTNode):
-    """Function parameter node"""
+    """函数参数节点"""
     node_name = "Param"
 
-    def __init__(self, name, is_mutable, param_type):
-        self.name = name
-        self.is_mutable = is_mutable  # bool
-        self.param_type = param_type  # TypeNode
+    def __init__(self, name: str, is_mutable: bool, param_type):
+        self.name = name  # 参数名
+        self.is_mutable = is_mutable  # 是否可变
+        self.param_type = param_type  # 参数类型 TypeNode
 
 
 class TypeNode(ASTNode):
-    """Type node (e.g., i32)"""
+    """类型节点（如 i32）"""
     node_name = "Type"
 
-    def __init__(self, type_name):
-        self.type_name = type_name  # string like "i32"
+    def __init__(self, type_name: str):
+        self.type_name = type_name  # 类型名称，如 "i32"
 
 
 class BlockStmtNode(ASTNode):
-    """Block statement node"""
+    """语句块节点"""
     node_name = "Block"
 
-    def __init__(self, statements):
-        self.statements = statements  # list of statement nodes
+    def __init__(self, statements: list):
+        self.statements = statements  # 语句列表
 
 
 class EmptyStmtNode(ASTNode):
-    """Empty statement node (just semicolon)"""
+    """空语句节点（仅分号）"""
     node_name = "EmptyStmt"
 
 
 class ReturnStmtNode(ASTNode):
-    """Return statement node"""
+    """返回语句节点"""
     node_name = "ReturnStmt"
 
     def __init__(self, expr=None):
-        self.expr = expr  # ExprNode or None
+        self.expr = expr  # 返回表达式 ExprNode 或 None
 
 
 class VarDeclStmtNode(ASTNode):
-    """Variable declaration statement node"""
+    """变量声明语句节点"""
     node_name = "VarDeclStmt"
 
-    def __init__(self, name, is_mutable, var_type=None, init_expr=None):
-        self.name = name
-        self.is_mutable = is_mutable  # bool
-        self.var_type = var_type  # TypeNode or None
-        self.init_expr = init_expr  # ExprNode or None
+    def __init__(self, name: str, is_mutable: bool, var_type=None, init_expr=None):
+        self.name = name  # 变量名
+        self.is_mutable = is_mutable  # 是否可变
+        self.var_type = var_type  # 类型注解 TypeNode 或 None
+        self.init_expr = init_expr  # 初始化表达式 ExprNode 或 None
 
 
 class AssignStmtNode(ASTNode):
-    """Assignment statement node"""
+    """赋值语句节点"""
     node_name = "AssignStmt"
 
     def __init__(self, left, value):
-        self.left = left  # LValueNode
-        self.value = value  # ExprNode
+        self.left = left  # 左值 LValueNode
+        self.value = value  # 右值表达式 ExprNode
 
 
 class ExprStmtNode(ASTNode):
-    """Expression statement node"""
+    """表达式语句节点"""
     node_name = "ExprStmt"
 
     def __init__(self, expr):
-        self.expr = expr  # ExprNode
+        self.expr = expr  # 表达式 ExprNode
 
 
 class IfStmtNode(ASTNode):
-    """If statement node"""
+    """条件语句节点"""
     node_name = "IfStmt"
 
     def __init__(self, condition, then_block, else_block=None):
-        self.condition = condition  # ExprNode
-        self.then_block = then_block  # BlockStmtNode
-        self.else_block = else_block  # BlockStmtNode or IfStmtNode or None
+        self.condition = condition  # 条件表达式 ExprNode
+        self.then_block = then_block  # then 语句块 BlockStmtNode
+        self.else_block = else_block  # else 语句块 BlockStmtNode 或 IfStmtNode 或 None
 
 
 class WhileStmtNode(ASTNode):
-    """While loop statement node"""
+    """while 循环语句节点"""
     node_name = "WhileStmt"
 
     def __init__(self, condition, body):
-        self.condition = condition  # ExprNode
-        self.body = body  # BlockStmtNode
+        self.condition = condition  # 循环条件 ExprNode
+        self.body = body  # 循环体 BlockStmtNode
 
 
 class BinaryExprNode(ASTNode):
-    """Binary expression node"""
+    """二元表达式节点"""
     node_name = "BinaryExpr"
 
-    def __init__(self, op, left, right):
-        self.op = op  # string operator
-        self.left = left  # ExprNode
-        self.right = right  # ExprNode
+    def __init__(self, op: str, left, right):
+        self.op = op  # 运算符
+        self.left = left  # 左操作数 ExprNode
+        self.right = right  # 右操作数 ExprNode
 
 
 class LValueNode(ASTNode):
-    """LValue (left value) node - variable reference"""
+    """左值节点 - 变量引用"""
     node_name = "LValue"
 
-    def __init__(self, name):
-        self.name = name  # string
+    def __init__(self, name: str):
+        self.name = name  # 变量名
 
 
 class NumberLiteralNode(ASTNode):
-    """Number literal node"""
+    """数字字面量节点"""
     node_name = "NumberLiteral"
 
     def __init__(self, value):
-        self.value = int(value)  # integer value
+        self.value = int(value)  # 数值
 
 
 class FuncCallNode(ASTNode):
-    """Function call node"""
+    """函数调用节点"""
     node_name = "FuncCall"
 
-    def __init__(self, name, args):
-        self.name = name  # string
-        self.args = args  # list of ExprNode
+    def __init__(self, name: str, args: list):
+        self.name = name  # 函数名
+        self.args = args  # 实参列表 ExprNode
 
 
 class UnaryMinusNode(ASTNode):
-    """Unary minus expression node"""
+    """一元负号表达式节点"""
     node_name = "UnaryMinus"
 
     def __init__(self, expr):
-        self.expr = expr  # ExprNode
+        self.expr = expr  # 操作数 ExprNode

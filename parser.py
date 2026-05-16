@@ -1,4 +1,4 @@
-"""Rust-like language parser using recursive descent"""
+"""Rust 类语言语法分析器 - 递归下降分析"""
 
 from lexer import Lexer
 from ast import *
@@ -6,16 +6,16 @@ from token_types import *
 
 
 class Parser:
-    """Recursive descent parser for Rust-like language"""
+    """Rust 类语言递归下降语法分析器"""
 
-    def __init__(self, source_code):
+    def __init__(self, source_code: str):
         self.lexer = Lexer(source_code)
-        self.tokens = []
-        self.pos = 0
-        self.errors = []
+        self.tokens = []  # Token 序列
+        self.pos = 0     # 当前解析位置
+        self.errors = []  # 错误信息列表
 
-    def parse(self):
-        """Parse the source code and return the AST"""
+    def parse(self) -> tuple:
+        """解析源代码，返回 (AST, 错误列表)"""
         self.tokens = self.lexer.tokenize()
         self.pos = 0
         self.errors = []
@@ -30,23 +30,23 @@ class Parser:
             return None, self.errors
 
     def current_token(self):
-        """Get the current token"""
+        """获取当前 Token（不消费）"""
         if self.pos < len(self.tokens):
             return self.tokens[self.pos]
         return self.tokens[-1]  # EOF token
 
     def peek_token(self, offset=1):
-        """Look at a token without consuming it"""
+        """向前查看 Token（不消费）"""
         if self.pos + offset < len(self.tokens):
             return self.tokens[self.pos + offset]
         return self.tokens[-1]
 
     def advance(self):
-        """Consume the current token and move to the next"""
+        """消费当前 Token，移动到下一个"""
         self.pos += 1
 
     def expect(self, token_type):
-        """Expect a token of the given type and consume it"""
+        """期望并消费指定类型的 Token"""
         token = self.current_token()
         if token.type != token_type:
             raise Exception(f"第{token.line}行第{token.column}列: 期望 '{token_type}'，实际是 '{token.type}'")
@@ -54,8 +54,7 @@ class Parser:
         return token
 
     def parse_program(self):
-        """Program -> Declaration串
-        Declaration串 -> 空 | Declaration Declaration串
+        """Program -> Declaration*
         Declaration -> FunctionDecl
         """
         declarations = []
@@ -70,9 +69,7 @@ class Parser:
         return self.parse_function_decl()
 
     def parse_function_decl(self):
-        """FunctionDecl -> FunctionHeader Block
-        FunctionHeader -> fn ID ( ParameterList ) ReturnType?
-        """
+        """FunctionDecl -> fn ID ( ParameterList ) ReturnType? Block"""
         self.expect(TT_KEYWORD_FN)
         name_token = self.expect(TT_ID)
         self.expect(TT_LPAREN)
@@ -81,7 +78,7 @@ class Parser:
 
         self.expect(TT_RPAREN)
 
-        # Check for return type
+        # 检查返回值类型
         return_type = None
         if self.current_token().type == TT_ARROW:
             self.advance()
@@ -91,20 +88,18 @@ class Parser:
         return FunctionDeclNode(name_token.value, params, return_type, body)
 
     def parse_parameter_list(self):
-        """ParameterList -> 空 | Param, ParameterList
-        Param -> VariableAttribute ID : Type
-        """
+        """ParameterList -> ε | Param (, Param)*"""
         params = []
 
-        # Check if list is empty
+        # 检查是否为空列表
         if self.current_token().type == TT_RPAREN:
             return params
 
-        # Parse first parameter
+        # 解析第一个参数
         param = self.parse_parameter()
         params.append(param)
 
-        # Parse remaining parameters
+        # 解析剩余参数
         while self.current_token().type == TT_COMMA:
             self.advance()
             param = self.parse_parameter()
@@ -113,10 +108,10 @@ class Parser:
         return params
 
     def parse_parameter(self):
-        """Param -> VariableAttribute ID : Type"""
+        """Param -> mut? ID : Type"""
         is_mutable = False
 
-        # Check for mut
+        # 检查 mut 关键字
         if self.current_token().type == TT_KEYWORD_MUT:
             is_mutable = True
             self.advance()
@@ -133,9 +128,7 @@ class Parser:
         return TypeNode(type_token.value)
 
     def parse_block(self):
-        """Block -> { Statement串 }
-        Statement串 -> 空 | Statement Statement串
-        """
+        """Block -> { Statement* }"""
         self.expect(TT_LBRACE)
 
         statements = []
@@ -150,44 +143,44 @@ class Parser:
         return BlockStmtNode(statements)
 
     def parse_statement(self):
-        """Statement -> ; | ReturnStmt | VarDeclStmt | AssignStmt | ExprStmt | IfStmt | WhileStmt"""
+        """Statement -> ; | return | let | if | while | Expr"""
         token = self.current_token()
 
-        # Empty statement
+        # 空语句
         if token.type == TT_SEMICOLON:
             self.advance()
             return EmptyStmtNode()
 
-        # Return statement
+        # return 语句
         if token.type == TT_KEYWORD_RETURN:
             return self.parse_return_stmt()
 
-        # Variable declaration
+        # let 变量声明
         if token.type == TT_KEYWORD_LET:
             return self.parse_var_decl_stmt()
 
-        # If statement
+        # if 条件语句
         if token.type == TT_KEYWORD_IF:
             return self.parse_if_stmt()
 
-        # While statement
+        # while 循环语句
         if token.type == TT_KEYWORD_WHILE:
             return self.parse_while_stmt()
 
-        # Try to parse as expression statement
+        # 尝试解析为表达式语句或赋值语句
         expr = self.try_parse_expression()
         if expr:
             self.expect(TT_SEMICOLON)
             return ExprStmtNode(expr)
 
-        # Unknown statement
+        # 未知语句
         raise Exception(f"第{token.line}行第{token.column}列: 未知语句开头 '{token.value}'")
 
     def parse_return_stmt(self):
-        """ReturnStmt -> return ; | return Expression ;"""
+        """ReturnStmt -> return Expression? ;"""
         self.expect(TT_KEYWORD_RETURN)
 
-        # Check if there's an expression
+        # 检查是否有表达式
         if self.current_token().type == TT_SEMICOLON:
             self.advance()
             return ReturnStmtNode(None)
@@ -197,7 +190,7 @@ class Parser:
         return ReturnStmtNode(expr)
 
     def parse_var_decl_stmt(self):
-        """VarDeclStmt -> let VariableAttribute ID (: Type)? (= Expression)? ;"""
+        """VarDeclStmt -> let mut? ID (: Type)? (= Expression)? ;"""
         self.expect(TT_KEYWORD_LET)
 
         is_mutable = False
@@ -207,11 +200,13 @@ class Parser:
 
         name_token = self.expect(TT_ID)
 
+        # 类型注解
         var_type = None
         if self.current_token().type == TT_COLON:
             self.advance()
             var_type = self.parse_type()
 
+        # 初始化表达式
         init_expr = None
         if self.current_token().type == TT_ASSIGN:
             self.advance()
@@ -221,9 +216,7 @@ class Parser:
         return VarDeclStmtNode(name_token.value, is_mutable, var_type, init_expr)
 
     def parse_if_stmt(self):
-        """IfStmt -> if Expression Block ElsePart
-        ElsePart -> 空 | else Block | else IfStmt
-        """
+        """IfStmt -> if Expression Block (else Block | IfStmt)?"""
         self.expect(TT_KEYWORD_IF)
 
         condition = self.parse_expression()
@@ -233,8 +226,10 @@ class Parser:
         if self.current_token().type == TT_KEYWORD_ELSE:
             self.advance()
             if self.current_token().type == TT_KEYWORD_IF:
+                # else if: 递归调用自身
                 else_block = self.parse_if_stmt()
             else:
+                # else Block
                 else_block = self.parse_block()
 
         return IfStmtNode(condition, then_block, else_block)
@@ -249,18 +244,15 @@ class Parser:
         return WhileStmtNode(condition, body)
 
     def try_parse_expression(self):
-        """Try to parse an expression (for assignment statements)"""
-        # Check if starts with an identifier (potential left value or expression)
+        """尝试解析表达式或赋值语句"""
         token = self.current_token()
 
         if token.type == TT_ID:
-            # Look ahead: ID = ... -> assignment
-            # Look ahead: ID ( ... ) -> function call
-            # Look ahead: ID ; or other -> simple expression
+            # 向前看一个 Token 判断是赋值还是表达式
             next_token = self.peek_token()
 
             if next_token.type == TT_ASSIGN:
-                # Assignment statement: LValue = Expression
+                # 赋值语句: id = expr
                 self.advance()
                 left = LValueNode(token.value)
                 self.advance()  # consume =
@@ -284,9 +276,7 @@ class Parser:
         return left
 
     def parse_additive_expr(self):
-        """AdditiveExpr -> Term (AddOp Term)*
-        AddOp -> + | -
-        """
+        """AdditiveExpr -> Term (('+' | '-') Term)*"""
         left = self.parse_term()
 
         while self.current_token().type in [TT_PLUS, TT_MINUS]:
@@ -298,9 +288,7 @@ class Parser:
         return left
 
     def parse_term(self):
-        """Term -> Factor (MulOp Factor)*
-        MulOp -> * | /
-        """
+        """Term -> Factor (('*' | '/') Factor)*"""
         left = self.parse_factor()
 
         while self.current_token().type in [TT_MUL, TT_DIV]:
@@ -315,54 +303,54 @@ class Parser:
         """Factor -> NUM | ID ( ArgumentList )? | ( Expression ) | - Factor"""
         token = self.current_token()
 
-        # Number literal
+        # 数字字面量
         if token.type == TT_NUM:
             self.advance()
             return NumberLiteralNode(token.value)
 
-        # Parenthesized expression
+        # 括号表达式
         if token.type == TT_LPAREN:
             self.advance()
             expr = self.parse_expression()
             self.expect(TT_RPAREN)
             return expr
 
-        # Unary minus
+        # 一元负号
         if token.type == TT_MINUS:
             self.advance()
             factor = self.parse_factor()
             return UnaryMinusNode(factor)
 
-        # Function call or simple identifier
+        # 函数调用或标识符
         if token.type == TT_ID:
             name = token.value
             self.advance()
 
-            # Check for function call
+            # 检查函数调用
             if self.current_token().type == TT_LPAREN:
                 self.advance()
                 args = self.parse_argument_list()
                 self.expect(TT_RPAREN)
                 return FuncCallNode(name, args)
 
-            # Simple identifier as expression (treated as lvalue)
+            # 标识符作为左值
             return LValueNode(name)
 
-        # Unknown factor
+        # 未知因子
         raise Exception(f"第{token.line}行第{token.column}列: 期望表达式，实际是 '{token.type}'")
 
     def parse_argument_list(self):
-        """ArgumentList -> 空 | Expression ( , Expression )*"""
+        """ArgumentList -> ε | Expression (, Expression)*"""
         args = []
 
         if self.current_token().type == TT_RPAREN:
             return args
 
-        # Parse first argument
+        # 解析第一个实参
         expr = self.parse_expression()
         args.append(expr)
 
-        # Parse remaining arguments
+        # 解析剩余实参
         while self.current_token().type == TT_COMMA:
             self.advance()
             expr = self.parse_expression()
