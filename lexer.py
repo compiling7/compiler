@@ -1,7 +1,7 @@
 """Rust-like language lexer"""
 
 import re
-from token_types import Token, KEYWORDS, SINGLE_CHAR_TOKENS, TWO_CHAR_TOKENS, TT_ERROR, TT_EOF
+from token_types import Token, KEYWORDS, SINGLE_CHAR_TOKENS, TWO_CHAR_TOKENS, TT_ERROR, TT_EOF, TT_DOT, TT_DOTDOT, TT_DOTDOT_EQ
 
 
 class Lexer:
@@ -98,6 +98,9 @@ class Lexer:
         # Digit - number
         elif ch.isdigit():
             return self.read_number()
+        # Dot operators (., .., ..=)
+        elif ch == '.':
+            return self.read_dot_ops()
         # Two-character operators
         elif self.pos + 1 < len(self.source):
             two_char = self.source[self.pos:self.pos + 2]
@@ -141,6 +144,21 @@ class Lexer:
             self.advance()
 
         return Token("NUM", result, start_line, start_col)
+
+    def read_dot_ops(self):
+        """Handle ., .., ..= operators"""
+        start_line = self.line
+        start_col = self.column
+        self.advance()  # consume first .
+
+        if self.pos < len(self.source) and self.source[self.pos] == '.':
+            self.advance()  # consume second .
+            if self.pos < len(self.source) and self.source[self.pos] == '=':
+                self.advance()  # consume =
+                return Token(TT_DOTDOT_EQ, "..=", start_line, start_col)
+            return Token(TT_DOTDOT, "..", start_line, start_col)
+
+        return Token(TT_DOT, ".", start_line, start_col)
 
     def format_tokens(self):
         """Format tokens for display"""
