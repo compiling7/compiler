@@ -52,6 +52,7 @@ TT_COMMA = ","
 TT_ARROW = "->"
 TT_DOT = "."
 TT_DOTDOT = ".."
+TT_DOTDOT_EQ = "..="
 
 # Comment markers (internal use, not actual tokens)
 # Comments are skipped during lexing
@@ -94,7 +95,6 @@ SINGLE_CHAR_TOKENS = {
     "=": TT_ASSIGN,
     ">": TT_GT,
     "<": TT_LT,
-    "!": TT_NE,
     "#": TT_HASH,
     "&": TT_AMP,
     ".": TT_DOT,
