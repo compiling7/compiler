@@ -1,8 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python3 -c \"\nimport py_compile\nfiles = [''token_types.py'', ''lexer.py'', ''ast.py'', ''parser.py'', ''visualization.py'', ''visualizer_gui.py'', ''main.py'']\nfor f in files:\n    try:\n        py_compile.compile(f, doraise=True)\n        print(f''✓ {f}'')\n    except py_compile.PyCompileError as e:\n        print(f''✗ {f}: {e}'')\n\")",
-      "Bash(python3:*)"
+      "Bash(python3 -c \"\nfrom visualizer_gui import *\n# Verify DARK no longer exists\ntry:\n    from visualizer_gui import DARK\n    print(''FAIL: DARK is still importable'')\nexcept ImportError:\n    print(''OK: DARK removed'')\ntry:\n    from visualizer_gui import set_theme\n    print(''FAIL: set_theme is still importable'')\nexcept ImportError:\n    print(''OK: set_theme removed'')\ntry:\n    from visualizer_gui import _is_dark\n    print(''FAIL: _is_dark is still importable'')\nexcept ImportError:\n    print(''OK: _is_dark removed'')\n\")"
     ],
     "deny": [],
     "ask": []
