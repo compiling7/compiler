@@ -48,6 +48,8 @@ class ASTVisualizer:
             return f"Param: {node.name} (mut={node.is_mutable})"
         elif isinstance(node, TypeNode):
             return f"Type: {node.type_name}"
+        elif isinstance(node, ArrayTypeNode):
+            return f"ArrayType: [{node.element_type.type_name}; {node.size}]"
         elif isinstance(node, BlockStmtNode):
             return f"Block (statements: {len(node.statements)})"
         elif isinstance(node, EmptyStmtNode):
@@ -65,6 +67,11 @@ class ASTVisualizer:
             return "IfStmt"
         elif isinstance(node, WhileStmtNode):
             return "WhileStmt"
+        elif isinstance(node, ForStmtNode):
+            mut_str = "mut " if node.is_mutable else ""
+            return f"ForStmt: {mut_str}{node.var_name}"
+        elif isinstance(node, RangeNode):
+            return "Range (..)"
         elif isinstance(node, BinaryExprNode):
             return f"BinaryExpr: {node.op}"
         elif isinstance(node, LValueNode):
@@ -75,6 +82,10 @@ class ASTVisualizer:
             return f"FuncCall: {node.name}()"
         elif isinstance(node, UnaryMinusNode):
             return "UnaryMinus"
+        elif isinstance(node, ArrayLiteralNode):
+            return f"ArrayLiteral ({len(node.elements)} elements)"
+        elif isinstance(node, ArrayAccessNode):
+            return "ArrayAccess"
         else:
             return str(node.__class__.__name__)
 
@@ -109,6 +120,10 @@ class ASTVisualizer:
                 children.append(node.else_block)
         elif isinstance(node, WhileStmtNode):
             children = [node.condition, node.body]
+        elif isinstance(node, ForStmtNode):
+            children = [node.iterable, node.body]
+        elif isinstance(node, RangeNode):
+            children = [node.start, node.end]
         elif isinstance(node, BinaryExprNode):
             children = [node.left, node.right]
         elif isinstance(node, LValueNode):
@@ -119,6 +134,12 @@ class ASTVisualizer:
             children = node.args
         elif isinstance(node, UnaryMinusNode):
             children = [node.expr]
+        elif isinstance(node, ArrayTypeNode):
+            children = [node.element_type]
+        elif isinstance(node, ArrayLiteralNode):
+            children = node.elements
+        elif isinstance(node, ArrayAccessNode):
+            children = [node.array, node.index]
 
         return children
 
@@ -159,6 +180,9 @@ class ASTVisualizer:
 
         elif isinstance(node, TypeNode):
             lines.append(f"{indent}Type(value='{node.type_name}')")
+
+        elif isinstance(node, ArrayTypeNode):
+            lines.append(f"{indent}ArrayType(elem='{node.element_type.type_name}', size={node.size})")
 
         elif isinstance(node, BlockStmtNode):
             lines.append(f"{indent}Block:")
@@ -211,6 +235,21 @@ class ASTVisualizer:
             lines.append(f"{indent}  Body:")
             self._build_structure(node.body, indent + "    ", lines)
 
+        elif isinstance(node, ForStmtNode):
+            mut_str = "True" if node.is_mutable else "False"
+            lines.append(f"{indent}ForStatement(variable='{node.var_name}', mutable={mut_str}):")
+            lines.append(f"{indent}  Iterable:")
+            self._build_structure(node.iterable, indent + "    ", lines)
+            lines.append(f"{indent}  Body:")
+            self._build_structure(node.body, indent + "    ", lines)
+
+        elif isinstance(node, RangeNode):
+            lines.append(f"{indent}Range:")
+            lines.append(f"{indent}  Start:")
+            self._build_structure(node.start, indent + "    ", lines)
+            lines.append(f"{indent}  End:")
+            self._build_structure(node.end, indent + "    ", lines)
+
         elif isinstance(node, BinaryExprNode):
             lines.append(f"{indent}InfixExpression(operator='{node.op}')")
             lines.append(f"{indent}  Left:")
@@ -233,6 +272,19 @@ class ASTVisualizer:
         elif isinstance(node, UnaryMinusNode):
             lines.append(f"{indent}UnaryMinus:")
             self._build_structure(node.expr, indent + "    ", lines)
+
+        elif isinstance(node, ArrayLiteralNode):
+            lines.append(f"{indent}ArrayLiteral (count={len(node.elements)}):")
+            for i, elem in enumerate(node.elements):
+                lines.append(f"{indent}  [{i}]:")
+                self._build_structure(elem, indent + "    ", lines)
+
+        elif isinstance(node, ArrayAccessNode):
+            lines.append(f"{indent}ArrayAccess:")
+            lines.append(f"{indent}  Array:")
+            self._build_structure(node.array, indent + "    ", lines)
+            lines.append(f"{indent}  Index:")
+            self._build_structure(node.index, indent + "    ", lines)
 
         else:
             lines.append(f"{indent}{node.__class__.__name__}")

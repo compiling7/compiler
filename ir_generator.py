@@ -79,6 +79,8 @@ class IRGenerator:
             self._if(node)
         elif isinstance(node, WhileStmtNode):
             self._while(node)
+        elif isinstance(node, ForStmtNode):
+            self._for(node)
         elif isinstance(node, BlockStmtNode):
             self._blk(node)
         # EmptyStmtNode — no-op
@@ -108,6 +110,40 @@ class IRGenerator:
         self._emit("goto", None, None, start)
         self._emit("label", None, None, end)
 
+    def _for(self, node):
+        """ForStmt -> for i in start..end { body }
+        IR: i = start
+            L0: if i >= end goto L1
+                body
+                i = i + 1
+                goto L0
+            L1:
+        """
+        if isinstance(node.iterable, RangeNode):
+            start_val = self._expr(node.iterable.start)
+            end_val = self._expr(node.iterable.end)
+            self._emit("assign", start_val, None, node.var_name)
+
+            loop_start = self._label()
+            loop_end = self._label()
+            self._emit("label", None, None, loop_start)
+
+            # condition: i < end
+            cond = self._temp()
+            self._emit("<", node.var_name, end_val, cond)
+            self._emit("if_false", cond, None, loop_end)
+
+            self._blk(node.body)
+
+            # increment: i = i + 1
+            self._emit("+", node.var_name, "1", node.var_name)
+            self._emit("goto", None, None, loop_start)
+            self._emit("label", None, None, loop_end)
+        else:
+            # 表达式作为可迭代结构 (如数组)
+            self._expr(node.iterable)
+            self._blk(node.body)
+
     def _expr(self, node):
         """Evaluate expression, return the name holding its value (temp or var)."""
         if isinstance(node, NumberLiteralNode):
@@ -132,5 +168,17 @@ class IRGenerator:
                 self._emit("arg", self._expr(a))
             t = self._temp()
             self._emit("call", node.name, str(len(node.args)), t)
+            return t
+        if isinstance(node, ArrayLiteralNode):
+            for elem in node.elements:
+                self._expr(elem)
+            t = self._temp()
+            self._emit("=", "0", None, t)  # placeholder
+            return t
+        if isinstance(node, ArrayAccessNode):
+            self._expr(node.array)
+            self._expr(node.index)
+            t = self._temp()
+            self._emit("=", "0", None, t)  # placeholder
             return t
         return None

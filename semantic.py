@@ -100,6 +100,21 @@ class SemanticAnalyzer:
             self._visit_expr(node.condition)
             self._visit_block(node.body)
             self._loop_depth -= 1
+        elif isinstance(node, ForStmtNode):
+            self._loop_depth += 1
+            # 循环变量定义在循环体作用域中
+            self._enter()
+            self._define(node.var_name, "variable", "i32", node.is_mutable, init=True)
+            # 检查可迭代结构
+            if isinstance(node.iterable, RangeNode):
+                self._visit_expr(node.iterable.start)
+                self._visit_expr(node.iterable.end)
+            else:
+                self._visit_expr(node.iterable)
+            # 访问循环体
+            self._visit_block(node.body)
+            self._exit()
+            self._loop_depth -= 1
         elif isinstance(node, ExprStmtNode):
             if isinstance(node.expr, AssignStmtNode):
                 self._visit_stmt(node.expr)  # assignment inside ExprStmtNode
@@ -125,4 +140,10 @@ class SemanticAnalyzer:
                 self._err(f"函数 '{node.name}' 未声明", node)
             for a in node.args:
                 self._visit_expr(a)
+        elif isinstance(node, ArrayLiteralNode):
+            for elem in node.elements:
+                self._visit_expr(elem)
+        elif isinstance(node, ArrayAccessNode):
+            self._visit_expr(node.array)
+            self._visit_expr(node.index)
         # NumberLiteralNode — no-op

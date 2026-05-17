@@ -61,6 +61,19 @@ class TypeNode(ASTNode):
         self.type_name = type_name  # 类型名称，如 "i32"
 
 
+class ArrayTypeNode(ASTNode):
+    """数组类型节点: [Type; size]"""
+    node_name = "ArrayType"
+
+    def __init__(self, element_type, size: int):
+        self.element_type = element_type  # 元素类型 TypeNode
+        self.size = size  # 数组长度
+
+    @property
+    def type_name(self):
+        return f"[{self.element_type.type_name}; {self.size}]"
+
+
 class BlockStmtNode(ASTNode):
     """语句块节点"""
     node_name = "Block"
@@ -129,6 +142,26 @@ class WhileStmtNode(ASTNode):
         self.body = body  # 循环体 BlockStmtNode
 
 
+class ForStmtNode(ASTNode):
+    """for 循环语句节点"""
+    node_name = "ForStmt"
+
+    def __init__(self, var_name: str, is_mutable: bool, iterable, body):
+        self.var_name = var_name  # 循环变量名
+        self.is_mutable = is_mutable  # 是否可变
+        self.iterable = iterable  # 可迭代结构 (RangeNode)
+        self.body = body  # 循环体 BlockStmtNode
+
+
+class RangeNode(ASTNode):
+    """范围表达式节点: start .. end"""
+    node_name = "Range"
+
+    def __init__(self, start, end):
+        self.start = start  # 起始表达式
+        self.end = end  # 结束表达式
+
+
 class BinaryExprNode(ASTNode):
     """二元表达式节点"""
     node_name = "BinaryExpr"
@@ -170,3 +203,20 @@ class UnaryMinusNode(ASTNode):
 
     def __init__(self, expr):
         self.expr = expr  # 操作数 ExprNode
+
+
+class ArrayLiteralNode(ASTNode):
+    """数组字面量节点: [expr, expr, ...]"""
+    node_name = "ArrayLiteral"
+
+    def __init__(self, elements: list):
+        self.elements = elements  # 元素表达式列表
+
+
+class ArrayAccessNode(ASTNode):
+    """数组下标访问节点: arr[index]"""
+    node_name = "ArrayAccess"
+
+    def __init__(self, array, index):
+        self.array = array  # 数组表达式
+        self.index = index  # 下标表达式
