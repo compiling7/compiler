@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c \"\nimport py_compile\nfiles = [''token_types.py'', ''lexer.py'', ''ast.py'', ''parser.py'', ''visualization.py'', ''visualizer_gui.py'', ''main.py'']\nfor f in files:\n    try:\n        py_compile.compile(f, doraise=True)\n        print(f''✓ {f}'')\n    except py_compile.PyCompileError as e:\n        print(f''✗ {f}: {e}'')\n\")",
+      "Bash(python3:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
