@@ -1,0 +1,7 @@
+__pycache__/
+.history/
+.claude
+dist/
+build/
+*.exe
+*.pkg

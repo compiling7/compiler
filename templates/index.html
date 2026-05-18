@@ -1,0 +1,1239 @@
+<!DOCTYPE html>
+<html class="light" lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>CompilerLab - Rust 编译器可视化</title>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script>
+tailwind.config = {
+  darkMode: "class",
+  theme: {
+    extend: {
+      colors: {
+        "outline": "#717786","surface": "#f9f9fe","surface-container-highest": "#e2e2e7",
+        "secondary-container": "#dfdfe1","primary-fixed-dim": "#adc6ff","on-tertiary-container": "#fcfcfc",
+        "secondary-fixed": "#e2e2e4","on-surface-variant": "#414755","surface-dim": "#dad9df",
+        "on-primary": "#ffffff","surface-container-high": "#e8e8ed","on-secondary-fixed-variant": "#454749",
+        "on-primary-container": "#fefcff","secondary-fixed-dim": "#c6c6c8","surface-container-lowest": "#ffffff",
+        "background": "#f9f9fe","tertiary-fixed-dim": "#c6c6c7","on-error": "#ffffff","on-tertiary": "#ffffff",
+        "surface-tint": "#005bc1","on-background": "#1a1c1f","tertiary-fixed": "#e2e2e2",
+        "inverse-primary": "#adc6ff","on-error-container": "#93000a","inverse-on-surface": "#f1f0f5",
+        "on-tertiary-fixed": "#1a1c1c","error-container": "#ffdad6","inverse-surface": "#2f3034",
+        "on-primary-fixed": "#001a41","on-tertiary-fixed-variant": "#454747","error": "#ba1a1a",
+        "surface-bright": "#f9f9fe","on-surface": "#1a1c1f","secondary": "#5d5e60",
+        "on-secondary-container": "#616365","surface-container": "#eeedf2","on-primary-fixed-variant": "#004493",
+        "tertiary": "#5a5c5c","primary": "#0058bc","tertiary-container": "#737575","primary-container": "#0070eb",
+        "primary-fixed": "#d8e2ff","surface-variant": "#e2e2e7","on-secondary": "#ffffff",
+        "surface-container-low": "#f3f3f8","on-secondary-fixed": "#1a1c1d","outline-variant": "#c1c6d7"
+      },
+      borderRadius: { DEFAULT: "0.25rem", lg: "0.5rem", xl: "0.75rem", full: "9999px" },
+      spacing: { lg: "24px", sidebar_w: "200px", gutter: "16px", base: "4px", sm: "12px", md: "16px", xl: "32px", detail_w: "280px" },
+      fontFamily: { "body-base": ["Inter"], "code-sm": ["JetBrains Mono"], "label-caps": ["Inter"], "display-lg": ["Inter"], "headline-md": ["Inter"], "title-sm": ["Inter"], "body-sm": ["Inter"], "code-base": ["JetBrains Mono"] },
+      fontSize: {
+        "body-base": ["15px",{lineHeight:"1.5",fontWeight:"400"}],
+        "code-sm": ["12px",{lineHeight:"1.6",fontWeight:"400"}],
+        "label-caps": ["11px",{lineHeight:"1",letterSpacing:"0.05em",fontWeight:"700"}],
+        "display-lg": ["32px",{lineHeight:"1.2",letterSpacing:"-0.02em",fontWeight:"700"}],
+        "headline-md": ["24px",{lineHeight:"1.3",letterSpacing:"-0.01em",fontWeight:"600"}],
+        "title-sm": ["18px",{lineHeight:"1.4",fontWeight:"600"}],
+        "body-sm": ["13px",{lineHeight:"1.5",fontWeight:"400"}],
+        "code-base": ["14px",{lineHeight:"1.6",fontWeight:"400"}]
+      }
+    }
+  }
+}
+</script>
+<style>
+  .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; vertical-align: middle; }
+  .code-gutter { border-right: 1px solid #D1D1D6; user-select: none; }
+  #code-editor { tab-size: 4; -moz-tab-size: 4; resize: none; }
+  #code-editor:focus { outline: none; }
+  .view-panel { display: none !important; }
+  .view-panel.active { display: flex !important; }
+  /* Right sidebar */
+  .nav-btn { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 8px; cursor: pointer; transition: all 0.15s; color: #414755; font-size: 13px; font-weight: 600; letter-spacing: 0.02em; border: none; background: transparent; width: 100%; text-align: left; }
+  .nav-btn:hover { background: #e8e8ed; }
+  .nav-btn.active { background: #0058bc; color: white; box-shadow: 0 2px 8px rgba(0,88,188,0.2); }
+  .nav-btn.active .nav-icon { color: white; }
+  .nav-icon { font-size: 20px; color: #717786; }
+  .nav-btn.active .nav-badge { background: rgba(255,255,255,0.25); color: white; }
+  .nav-badge { font-size: 10px; padding: 1px 7px; border-radius: 10px; font-weight: 700; margin-left: auto; }
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #c1c6d7; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #a0a5b5; }
+  /* Token badges */
+  .tb { font-size: 10px; padding: 1px 6px; border-radius: 4px; font-weight: 600; letter-spacing: 0.02em; white-space: nowrap; }
+  .tb-kw { background: #d8e2ff; color: #004493; } .tb-id { background: #e8e8ed; color: #414755; }
+  .tb-op { background: #fef0d6; color: #9a6200; } .tb-delim { background: #e8e8ed; color: #414755; }
+  .tb-num { background: #fce4d6; color: #a34400; } .tb-err { background: #ffdad6; color: #93000a; }
+  .tb-eof { background: #e2e2e7; color: #717786; }
+  /* Syntax highlight colors for source code */
+  .syn-kw { color: #0058bc; font-weight: 700; }
+  .syn-id { color: #1a1a2e; }
+  .syn-num { color: #c62828; font-weight: 500; }
+  .syn-op { color: #717786; }
+  .syn-delim { color: #8e8e93; }
+  .syn-type { color: #0f9d58; font-weight: 600; }
+  /* Token hover in source code */
+  .tok-span { cursor: pointer; border-radius: 3px; padding: 0 2px; transition: background 0.1s; }
+  .tok-span:hover { box-shadow: inset 0 0 0 1px #0058bc; }
+  .tok-span.highlighted { background: #d8e2ff; box-shadow: inset 0 0 0 1px #0058bc; }
+  /* Token table row highlight */
+  .tok-row { cursor: pointer; transition: background 0.1s; }
+  .tok-row:hover { background: #e8e8ed; }
+  .tok-row.active { background: #d8e2ff; }
+  /* LR animation */
+  .lr-step { padding: 4px 10px; border-radius: 4px; font-size: 12px; font-family: 'JetBrains Mono', monospace; transition: all 0.15s; cursor: pointer; }
+  .lr-step:hover { background: #e8e8ed; }
+  .lr-step.active { background: #0058bc; color: white; }
+  .lr-step.enter { border-left: 3px solid #0058bc; }
+  .lr-step.exit { border-left: 3px solid #0f9d58; }
+  .lr-step.consume { border-left: 3px solid #e65100; }
+  .lr-step.error { border-left: 3px solid #ba1a1a; background: #ffdad6; }
+  .lr-step.begin { border-left: 3px solid #7c3aed; }
+  .lr-step.end { border-left: 3px solid #0f9d58; }
+  /* Call stack in LR */
+  .stack-frame { padding: 4px 10px; margin: 2px 0; border-radius: 4px; font-size: 12px; font-family: 'JetBrains Mono', monospace; background: #e3f2fd; border-left: 3px solid #1f6feb; }
+  /* D3 tree tooltip */
+  .d3-tip { position: absolute; padding: 8px 12px; background: #1a1c1f; color: #f1f0f5; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 11px; pointer-events: none; z-index: 100; max-width: 320px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spin { animation: spin 0.8s linear infinite; }
+  /* ASM highlight */
+  .asm-cmt { color: #6a9955; } .asm-kw { color: #569cd6; } .asm-lab { color: #dcdcaa; }
+  .asm-reg { color: #4fc1ff; } .asm-dir { color: #c586c0; } .asm-num { color: #b5cea8; }
+  /* Detail panel sections */
+  .dsec { border-bottom: 1px solid #e2e2e7; padding: 12px 14px; }
+  .dsec:last-child { border-bottom: none; }
+  .dsec-title { font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #717786; margin-bottom: 8px; }
+</style>
+</head>
+<body class="bg-surface font-body-base text-on-surface overflow-hidden flex flex-col h-screen">
+
+<!-- ═══════════ TOP NAVBAR ═══════════ -->
+<header class="bg-surface border-b border-outline-variant h-11 flex items-center justify-between w-full px-3 flex-shrink-0 z-50">
+  <div class="flex items-center gap-2">
+    <span class="font-title-sm font-bold text-on-surface text-lg">CompilerLab</span>
+    <div class="h-4 w-px bg-outline-variant mx-2"></div>
+    <button onclick="openFile()" class="px-2.5 h-8 flex items-center gap-1.5 text-secondary hover:bg-surface-container-high rounded transition-colors text-xs">
+      <span class="material-symbols-outlined text-[17px]">file_open</span>
+      <span class="font-label-caps">Open</span>
+    </button>
+    <button onclick="saveOutput()" class="px-2.5 h-8 flex items-center gap-1.5 text-secondary hover:bg-surface-container-high rounded transition-colors text-xs">
+      <span class="material-symbols-outlined text-[17px]">save</span>
+      <span class="font-label-caps">Save</span>
+    </button>
+    <div class="h-4 w-px bg-outline-variant mx-1"></div>
+    <button onclick="runLexer()" class="px-2.5 h-8 flex items-center gap-1.5 text-primary hover:bg-surface-container-high rounded transition-colors text-xs">
+      <span class="material-symbols-outlined text-[17px]">play_arrow</span>
+      <span class="font-label-caps">Lexer</span>
+    </button>
+    <button onclick="runParser()" class="px-2.5 h-8 flex items-center gap-1.5 text-primary hover:bg-surface-container-high rounded transition-colors text-xs">
+      <span class="material-symbols-outlined text-[17px]">account_tree</span>
+      <span class="font-label-caps">Parser</span>
+    </button>
+    <button onclick="runPipeline()" class="px-3 h-8 flex items-center gap-1.5 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors text-xs font-bold">
+      <span class="material-symbols-outlined text-[17px]">play_circle</span>
+      <span class="font-label-caps">Run All</span>
+    </button>
+  </div>
+  <div class="flex items-center gap-1">
+    <button onclick="clearAll()" class="p-1.5 text-secondary hover:text-on-surface hover:bg-surface-container-high rounded transition-colors" title="Clear">
+      <span class="material-symbols-outlined">delete_sweep</span>
+    </button>
+  </div>
+</header>
+
+<!-- ═══════════ MAIN LAYOUT ═══════════ -->
+<div class="flex flex-1 overflow-hidden">
+
+  <!-- ─── MAIN CONTENT ─── -->
+  <main class="flex-1 flex overflow-hidden">
+
+    <!-- ===== VIEW: Editor ===== -->
+    <div id="view-editor" class="view-panel active flex-1 flex overflow-hidden">
+      <div class="flex-1 flex flex-col overflow-hidden">
+        <div class="h-7 bg-surface-container px-3 flex items-center border-b border-outline-variant flex-shrink-0">
+          <span class="font-label-caps text-on-surface-variant">SOURCE: main.rs</span>
+          <span id="editor-cursor" class="ml-auto font-code-sm text-outline text-[12px]">Ln 1, Col 1</span>
+        </div>
+        <div class="flex-1 flex overflow-auto font-code-base">
+          <div class="code-gutter w-10 flex flex-col items-end pr-1.5 py-2 bg-surface-container-low text-outline/60 select-none text-[13px] leading-[1.6] overflow-hidden" id="editor-lines"></div>
+          <textarea id="code-editor" class="flex-1 p-3 whitespace-pre bg-surface-container-lowest text-on-surface border-0 font-code-base text-[13px] leading-[1.6]"
+            spellcheck="false" placeholder="// 输入 Rust 代码..." oninput="onEdit()" onscroll="syncGutter()" onkeydown="onTab(event)"></textarea>
+        </div>
+      </div>
+      <!-- Detail panel: Symbol Table + Stats -->
+      <div class="w-detail_w flex-shrink-0 border-l border-outline-variant flex flex-col overflow-hidden bg-surface-container-low">
+        <div class="h-7 bg-surface-container px-3 flex items-center border-b border-outline-variant flex-shrink-0">
+          <span class="font-label-caps text-on-surface-variant">SYMBOLS & STATS</span>
+        </div>
+        <div class="flex-1 overflow-auto">
+          <div class="dsec">
+            <div class="dsec-title">Statistics</div>
+            <div id="editor-stats" class="font-body-sm text-body-sm text-on-surface-variant space-y-1">
+              <div class="flex justify-between"><span>Tokens</span><span class="font-bold text-on-surface" id="st-tokens">—</span></div>
+              <div class="flex justify-between"><span>AST Nodes</span><span class="font-bold text-on-surface" id="st-ast">—</span></div>
+              <div class="flex justify-between"><span>IR Insts</span><span class="font-bold text-on-surface" id="st-ir">—</span></div>
+              <div class="flex justify-between"><span>Errors</span><span class="font-bold text-error" id="st-errs">0</span></div>
+            </div>
+          </div>
+          <div class="dsec">
+            <div class="dsec-title">Symbol Table</div>
+            <table class="w-full text-xs border-collapse" id="editor-sym-table">
+              <thead><tr class="text-outline font-semibold"><th class="text-left py-1 pr-2">Name</th><th class="text-left py-1 pr-2">Kind</th><th class="text-left py-1 pr-2">Type</th><th class="text-left py-1">Mut</th></tr></thead>
+              <tbody id="editor-sym-body" class="font-code-sm text-[12px]"><tr><td colspan="4" class="text-outline py-4 text-center">暂无数据</td></tr></tbody>
+            </table>
+          </div>
+          <div class="dsec">
+            <div class="dsec-title">Output Preview</div>
+            <div id="editor-output" class="font-code-sm text-[12px] text-outline whitespace-pre-wrap">准备好编译代码 — 点击 Run All</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== VIEW: Lexer ===== -->
+    <div id="view-lexer" class="view-panel flex-1 flex overflow-hidden">
+      <div class="flex-1 flex flex-col overflow-hidden">
+        <!-- Highlighted source -->
+        <div class="flex-[3] flex flex-col overflow-hidden border-b border-outline-variant">
+          <div class="h-7 bg-surface-container px-3 flex items-center border-b border-outline-variant flex-shrink-0">
+            <span class="font-label-caps text-on-surface-variant">HIGHLIGHTED SOURCE</span>
+            <span class="ml-auto font-code-sm text-outline text-[12px]" id="lexer-stats"></span>
+          </div>
+          <div class="flex-1 flex overflow-auto">
+            <div class="code-gutter w-10 flex flex-col items-end pr-1.5 py-2 bg-surface-container-low text-outline/60 select-none text-[13px] leading-[1.6]" id="lexer-lines"></div>
+            <div class="flex-1 p-3 whitespace-pre font-code-base text-[13px] leading-[1.6] overflow-auto" id="lexer-code"></div>
+          </div>
+        </div>
+        <!-- Token table -->
+        <div class="flex-[2] flex flex-col overflow-hidden">
+          <div class="h-7 bg-surface-container px-3 flex items-center justify-between border-b border-outline-variant flex-shrink-0">
+            <span class="font-label-caps text-on-surface-variant">TOKEN STREAM</span>
+            <span id="lexer-token-count" class="font-code-sm text-outline text-[12px]"></span>
+          </div>
+          <div class="flex-1 overflow-auto">
+            <table class="w-full text-left border-collapse">
+              <thead class="sticky top-0 bg-surface-container-low z-10">
+                <tr class="border-b border-outline-variant text-[11px]">
+                  <th class="px-3 py-1.5 font-label-caps text-secondary uppercase w-12">#</th>
+                  <th class="px-3 py-1.5 font-label-caps text-secondary uppercase">Type</th>
+                  <th class="px-3 py-1.5 font-label-caps text-secondary uppercase">Value</th>
+                  <th class="px-3 py-1.5 font-label-caps text-secondary uppercase w-10">Ln</th>
+                  <th class="px-3 py-1.5 font-label-caps text-secondary uppercase w-10">Col</th>
+                </tr>
+              </thead>
+              <tbody id="lexer-tbody" class="font-code-sm text-[13px]"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <!-- Detail panel: Token Info -->
+      <div class="w-detail_w flex-shrink-0 border-l border-outline-variant flex flex-col overflow-hidden bg-surface-container-low">
+        <div class="h-7 bg-surface-container px-3 flex items-center border-b border-outline-variant flex-shrink-0">
+          <span class="font-label-caps text-on-surface-variant">TOKEN DETAIL</span>
+        </div>
+        <div class="flex-1 overflow-auto" id="lexer-detail">
+          <div class="dsec">
+            <div class="dsec-title">Info</div>
+            <div class="font-body-sm text-body-sm text-on-surface-variant space-y-1" id="lexer-detail-content">
+              <div class="text-outline">悬停或点击 Token 查看详情</div>
+            </div>
+          </div>
+          <div class="dsec">
+            <div class="dsec-title">Token Colors</div>
+            <div class="space-y-1.5 text-[12px]">
+              <div><span class="tb tb-kw">&nbsp;KEYWORD&nbsp;</span> <span class="text-outline ml-2">fn, let, if, else</span></div>
+              <div><span class="tb tb-id">&nbsp;IDENTIFIER&nbsp;</span> <span class="text-outline ml-2">main, x, y</span></div>
+              <div><span class="tb tb-num">&nbsp;NUMBER&nbsp;</span> <span class="text-outline ml-2">0, 1, 42</span></div>
+              <div><span class="tb tb-op">&nbsp;OPERATOR&nbsp;</span> <span class="text-outline ml-2">+, =, ==, ></span></div>
+              <div><span class="tb tb-delim">&nbsp;DELIMITER&nbsp;</span> <span class="text-outline ml-2">(, ), {, }, ;</span></div>
+              <div><span class="tb tb-err">&nbsp;ERROR&nbsp;</span> <span class="text-outline ml-2">非法字符</span></div>
+            </div>
+          </div>
+          <div class="dsec">
+            <div class="dsec-title">Statistics</div>
+            <div id="lexer-detail-stats" class="font-body-sm text-body-sm text-on-surface-variant"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== VIEW: Parser (Syntax Tree) ===== -->
+    <div id="view-parser" class="view-panel flex-1 flex overflow-hidden">
+      <div class="flex-1 flex flex-col overflow-hidden">
+        <div class="h-7 bg-surface-container px-3 flex items-center justify-between border-b border-outline-variant flex-shrink-0">
+          <span class="font-label-caps text-on-surface-variant">SYNTAX TREE</span>
+          <span class="flex gap-1">
+            <button onclick="zoomTree(1.2)" class="text-secondary hover:text-on-surface text-xs p-0.5 rounded hover:bg-surface-container-high" title="Zoom In"><span class="material-symbols-outlined text-[16px]">zoom_in</span></button>
+            <button onclick="zoomTree(0.8)" class="text-secondary hover:text-on-surface text-xs p-0.5 rounded hover:bg-surface-container-high" title="Zoom Out"><span class="material-symbols-outlined text-[16px]">zoom_out</span></button>
+            <button onclick="resetTree()" class="text-secondary hover:text-on-surface text-xs p-0.5 rounded hover:bg-surface-container-high" title="Fit"><span class="material-symbols-outlined text-[16px]">fit_screen</span></button>
+          </span>
+        </div>
+        <div class="flex-1 overflow-hidden relative" id="parser-tree-container">
+          <div class="absolute inset-0 flex items-center justify-center text-outline font-code-sm" id="parser-placeholder">
+            请先执行语法分析
+          </div>
+          <svg id="parser-tree-svg" class="w-full h-full"></svg>
+        </div>
+      </div>
+      <!-- Detail panel: Node Properties -->
+      <div class="w-detail_w flex-shrink-0 border-l border-outline-variant flex flex-col overflow-hidden bg-surface-container-low">
+        <div class="h-7 bg-surface-container px-3 flex items-center border-b border-outline-variant flex-shrink-0">
+          <span class="font-label-caps text-on-surface-variant">NODE PROPERTIES</span>
+        </div>
+        <div class="flex-1 overflow-auto" id="parser-detail">
+          <div class="dsec">
+            <div class="dsec-title">Selected Node</div>
+            <div id="parser-node-info" class="font-body-sm text-body-sm">悬停或点击节点查看属性</div>
+          </div>
+          <div class="dsec">
+            <div class="dsec-title">Grammar Reference</div>
+            <div class="font-code-sm text-[12px] text-on-surface-variant whitespace-pre leading-relaxed">program     = fn_decl*
+fn_decl     = "fn" ID "(" params ")"
+              ("->" type)? block
+params      = param ("," param)* | ε
+param       = "mut"? ID ":" type
+block       = "{" stmt* "}"
+stmt        = let | return | if
+            | while | for | assign
+let_stmt    = "let" "mut"? ID
+              (":" type)? ("=" expr)? ";"
+if_stmt     = "if" expr block
+              ("else" (block|if))?
+while_stmt  = "while" expr block
+for_stmt    = "for" ID "in" expr block
+expr        = additive (comp additive)*
+type        = "i32" | "[" type ";" NUM "]"</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== VIEW: LR (Parsing Process) ===== -->
+    <div id="view-lr" class="view-panel flex-1 flex overflow-hidden">
+      <div class="flex-1 flex flex-col overflow-hidden">
+        <!-- Controls -->
+        <div class="h-10 bg-surface-container px-3 flex items-center gap-2 border-b border-outline-variant flex-shrink-0">
+          <button onclick="lrPrev()" class="p-1 text-secondary hover:text-on-surface hover:bg-surface-container-high rounded" title="Previous Step"><span class="material-symbols-outlined">skip_previous</span></button>
+          <button onclick="lrToggle()" class="p-1 text-secondary hover:text-on-surface hover:bg-surface-container-high rounded" title="Play/Pause"><span class="material-symbols-outlined" id="lr-play-icon">play_arrow</span></button>
+          <button onclick="lrNext()" class="p-1 text-secondary hover:text-on-surface hover:bg-surface-container-high rounded" title="Next Step"><span class="material-symbols-outlined">skip_next</span></button>
+          <button onclick="lrReset()" class="p-1 text-secondary hover:text-on-surface hover:bg-surface-container-high rounded" title="Reset"><span class="material-symbols-outlined">replay</span></button>
+          <span class="h-4 w-px bg-outline-variant mx-1"></span>
+          <span class="font-code-sm text-[12px] text-outline" id="lr-step-indicator">Step 0 / 0</span>
+          <span class="h-4 w-px bg-outline-variant mx-1"></span>
+          <label class="flex items-center gap-1.5 font-code-sm text-[12px] text-outline cursor-pointer">
+            <input type="range" id="lr-speed" min="1" max="10" value="5" class="w-16 h-1 accent-primary"/>
+            <span>Speed</span>
+          </label>
+        </div>
+        <div class="flex-1 flex overflow-hidden">
+          <!-- Trace log -->
+          <div class="flex-1 flex flex-col overflow-hidden border-r border-outline-variant">
+            <div class="h-6 bg-surface-container px-3 flex items-center border-b border-outline-variant flex-shrink-0">
+              <span class="font-label-caps text-[10px] text-on-surface-variant">PARSE TRACE</span>
+            </div>
+            <div class="flex-1 overflow-auto p-2 font-code-sm text-[12px]" id="lr-trace"></div>
+          </div>
+          <!-- Call stack + current info -->
+          <div class="w-[220px] flex flex-col overflow-hidden flex-shrink-0">
+            <div class="h-6 bg-surface-container px-3 flex items-center border-b border-outline-variant flex-shrink-0">
+              <span class="font-label-caps text-[10px] text-on-surface-variant">CALL STACK</span>
+            </div>
+            <div class="flex-1 overflow-auto p-2" id="lr-callstack">
+              <div class="text-outline text-[12px]">执行分析后查看</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- Detail panel: Step Info -->
+      <div class="w-detail_w flex-shrink-0 border-l border-outline-variant flex flex-col overflow-hidden bg-surface-container-low">
+        <div class="h-7 bg-surface-container px-3 flex items-center border-b border-outline-variant flex-shrink-0">
+          <span class="font-label-caps text-on-surface-variant">STEP DETAIL</span>
+        </div>
+        <div class="flex-1 overflow-auto" id="lr-detail">
+          <div class="dsec">
+            <div class="dsec-title">Current Step</div>
+            <div id="lr-step-info" class="font-body-sm text-body-sm">执行分析后查看</div>
+          </div>
+          <div class="dsec">
+            <div class="dsec-title">Token</div>
+            <div id="lr-token-info" class="font-body-sm text-body-sm">—</div>
+          </div>
+          <div class="dsec">
+            <div class="dsec-title">Grammar Rule</div>
+            <div id="lr-rule-info" class="font-code-sm text-[12px]">—</div>
+          </div>
+          <div class="dsec">
+            <div class="dsec-title">Legend</div>
+            <div class="space-y-1 text-[12px]">
+              <div class="flex items-center gap-2"><span class="w-1 h-4 rounded-full bg-[#0058bc]"></span> Enter function</div>
+              <div class="flex items-center gap-2"><span class="w-1 h-4 rounded-full bg-[#0f9d58]"></span> Exit function</div>
+              <div class="flex items-center gap-2"><span class="w-1 h-4 rounded-full bg-[#e65100]"></span> Consume token</div>
+              <div class="flex items-center gap-2"><span class="w-1 h-4 rounded-full bg-[#ba1a1a]"></span> Error</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== VIEW: AST ===== -->
+    <div id="view-ast" class="view-panel flex-1 flex overflow-hidden">
+      <div class="flex-1 flex flex-col overflow-hidden">
+        <div class="h-7 bg-surface-container px-3 flex items-center justify-between border-b border-outline-variant flex-shrink-0">
+          <span class="font-label-caps text-on-surface-variant">ABSTRACT SYNTAX TREE</span>
+          <span class="flex gap-1">
+            <button onclick="zoomAST(1.2)" class="text-secondary hover:text-on-surface text-xs p-0.5 rounded hover:bg-surface-container-high"><span class="material-symbols-outlined text-[16px]">zoom_in</span></button>
+            <button onclick="zoomAST(0.8)" class="text-secondary hover:text-on-surface text-xs p-0.5 rounded hover:bg-surface-container-high"><span class="material-symbols-outlined text-[16px]">zoom_out</span></button>
+            <button onclick="resetAST()" class="text-secondary hover:text-on-surface text-xs p-0.5 rounded hover:bg-surface-container-high"><span class="material-symbols-outlined text-[16px]">fit_screen</span></button>
+          </span>
+        </div>
+        <div class="flex-1 overflow-hidden relative" id="ast-container">
+          <div class="absolute inset-0 flex items-center justify-center text-outline font-code-sm" id="ast-placeholder">请先执行语法分析</div>
+          <svg id="ast-svg" class="w-full h-full"></svg>
+        </div>
+      </div>
+      <!-- Detail panel: AST Node Properties -->
+      <div class="w-detail_w flex-shrink-0 border-l border-outline-variant flex flex-col overflow-hidden bg-surface-container-low">
+        <div class="h-7 bg-surface-container px-3 flex items-center border-b border-outline-variant flex-shrink-0">
+          <span class="font-label-caps text-on-surface-variant">AST NODE</span>
+        </div>
+        <div class="flex-1 overflow-auto" id="ast-detail">
+          <div class="dsec">
+            <div class="dsec-title">Properties</div>
+            <div id="ast-node-info" class="font-body-sm text-body-sm">悬停或点击节点查看属性</div>
+          </div>
+          <div class="dsec">
+            <div class="dsec-title">Legend</div>
+            <div class="space-y-1.5 text-[12px]">
+              <div><span class="inline-block w-2.5 h-2.5 rounded-sm" style="background:#e3f2fd;border:1px solid #90caf9"></span> Declaration</div>
+              <div><span class="inline-block w-2.5 h-2.5 rounded-sm" style="background:#e8f5e9;border:1px solid #a5d6a7"></span> Statement</div>
+              <div><span class="inline-block w-2.5 h-2.5 rounded-sm" style="background:#fff3e0;border:1px solid #ffcc80"></span> Expression</div>
+              <div><span class="inline-block w-2.5 h-2.5 rounded-sm" style="background:#f3e5f5;border:1px solid #ce93d8"></span> Type</div>
+              <div><span class="inline-block w-2.5 h-2.5 rounded-sm" style="background:#fce4ec;border:1px solid #ef9a9a"></span> Literal</div>
+              <div class="text-outline pt-2">悬停查看详情 · 滚轮缩放</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== VIEW: Issues ===== -->
+    <div id="view-issues" class="view-panel flex-1 flex overflow-hidden">
+      <div class="flex-1 flex flex-col overflow-hidden">
+        <div class="h-7 bg-surface-container px-3 flex items-center border-b border-outline-variant flex-shrink-0">
+          <span class="font-label-caps text-on-surface-variant">ERRORS &amp; WARNINGS</span>
+          <span id="issues-count-badge" class="ml-2 hidden"><span class="tb tb-err text-[10px]">0</span></span>
+        </div>
+        <div class="flex-1 overflow-auto p-3" id="issues-list">
+          <div class="text-outline font-body-sm">暂无错误</div>
+        </div>
+      </div>
+      <div class="w-detail_w flex-shrink-0 border-l border-outline-variant flex flex-col overflow-hidden bg-surface-container-low">
+        <div class="h-7 bg-surface-container px-3 flex items-center border-b border-outline-variant flex-shrink-0">
+          <span class="font-label-caps text-on-surface-variant">ERROR DETAIL</span>
+        </div>
+        <div class="flex-1 overflow-auto" id="issues-detail">
+          <div class="dsec">
+            <div class="dsec-title">Selected Error</div>
+            <div id="issues-error-info" class="font-body-sm text-body-sm">选择一个错误查看详情</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ─── RIGHT SIDEBAR ─── -->
+  <aside class="bg-surface-container-low border-l border-outline-variant w-sidebar_w flex flex-col py-3 px-2 flex-shrink-0 overflow-y-auto">
+    <div class="mb-3 px-1.5">
+      <h2 class="font-headline-md text-lg font-bold text-primary">Views</h2>
+      <p class="font-body-sm text-[11px] text-on-surface-variant">Compiler Stages</p>
+    </div>
+    <nav class="flex flex-col gap-1">
+      <button onclick="switchView('editor')" data-view="editor" class="nav-btn active">
+        <span class="material-symbols-outlined nav-icon">edit_note</span> Editor
+      </button>
+      <button onclick="switchView('lexer')" data-view="lexer" class="nav-btn">
+        <span class="material-symbols-outlined nav-icon">terminal</span> Lexer
+        <span class="nav-badge hidden" id="badge-lexer">0</span>
+      </button>
+      <button onclick="switchView('parser')" data-view="parser" class="nav-btn">
+        <span class="material-symbols-outlined nav-icon">account_tree</span> Parser
+      </button>
+      <button onclick="switchView('lr')" data-view="lr" class="nav-btn">
+        <span class="material-symbols-outlined nav-icon">steps</span> LR
+      </button>
+      <button onclick="switchView('ast')" data-view="ast" class="nav-btn">
+        <span class="material-symbols-outlined nav-icon">data_object</span> AST
+      </button>
+      <button onclick="switchView('issues')" data-view="issues" class="nav-btn">
+        <span class="material-symbols-outlined nav-icon">bug_report</span> Issues
+        <span class="nav-badge hidden" id="badge-issues">0</span>
+      </button>
+    </nav>
+    <div class="mt-auto border-t border-outline-variant pt-3 px-1.5">
+      <div class="flex items-center gap-2">
+        <div class="w-6 h-6 rounded-full bg-secondary-container flex items-center justify-center text-[10px] font-bold text-secondary">CL</div>
+        <div>
+          <p class="font-label-caps text-[11px] font-bold">CompilerLab</p>
+          <p class="text-[10px] text-on-surface-variant">v1.0</p>
+        </div>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<!-- ═══════════ STATUS BAR ═══════════ -->
+<footer class="bg-primary text-on-primary h-6 flex items-center justify-between px-3 flex-shrink-0 z-50">
+  <div class="flex items-center gap-3">
+    <span class="flex items-center gap-1">
+      <span id="status-icon" class="material-symbols-outlined text-[14px]">check_circle</span>
+      <span id="status-text" class="font-code-sm text-[12px]">Ready</span>
+    </span>
+    <span class="h-3 w-px bg-on-primary/30"></span>
+    <span id="status-bar-info" class="font-code-sm text-[12px]"></span>
+  </div>
+  <div class="flex items-center gap-3">
+    <span class="font-code-sm text-[12px] font-bold">CompilerLab Academic</span>
+  </div>
+</footer>
+
+<!-- ═══════════════ JAVASCRIPT ═══════════════ -->
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script>
+// ═══════════════════════════════════════════
+// State
+// ═══════════════════════════════════════════
+const S = {
+  source: '', tokens: [], ast: null, trace: [], trace_events: [], quads: [], assembly: '',
+  symbolTable: {}, errors: [], stats: {}, currentView: 'editor',
+  tokenHover: null, selectedTokenIdx: -1,
+  parsed: false,
+  // LR state
+  lrStep: 0, lrPlaying: false, lrTimer: null,
+  // D3 zoom
+  parserZoom: null, astZoom: null,
+};
+
+const SAMPLE = `fn main() -> i32 {
+    let x: i32 = 10;
+    let mut y: i32 = 5;
+    y = x + 20;
+    if y > 10 {
+        return 1;
+    } else {
+        return 0;
+    }
+}`;
+
+// ═══════════════════════════════════════════
+// Init
+// ═══════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('code-editor').value = SAMPLE;
+  S.source = SAMPLE;
+  updateGutter();
+});
+
+// ═══════════════════════════════════════════
+// View Switching
+// ═══════════════════════════════════════════
+function switchView(view) {
+  S.currentView = view;
+  // Directly control display to avoid CSS specificity conflicts with Tailwind
+  document.querySelectorAll('.view-panel').forEach(el => {
+    el.classList.remove('active');
+    el.style.display = 'none';
+  });
+  const panel = document.getElementById('view-' + view);
+  if (panel) {
+    panel.classList.add('active');
+    panel.style.display = 'flex';
+  }
+  document.querySelectorAll('.nav-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.view === view);
+  });
+  // Refresh on switch
+  if (view === 'lexer' && S.tokens.length > 0) renderLexer();
+  if (view === 'parser' && S.ast) renderParserTree();
+  if (view === 'lr' && S.trace.length > 0) renderLR();
+  if (view === 'ast' && S.ast) renderAST();
+  if (view === 'issues') renderIssues();
+}
+
+// ═══════════════════════════════════════════
+// Editor
+// ═══════════════════════════════════════════
+function onEdit() {
+  S.source = document.getElementById('code-editor').value;
+  updateGutter();
+  updateCursor();
+}
+function onTab(e) {
+  if (e.key === 'Tab') { e.preventDefault(); const t=e.target, s=t.selectionStart, e2=t.selectionEnd;
+    t.value = t.value.substring(0,s) + '    ' + t.value.substring(e2);
+    t.selectionStart = t.selectionEnd = s+4; S.source = t.value; updateGutter(); }
+}
+function updateGutter() {
+  const n = document.getElementById('code-editor').value.split('\n').length;
+  document.getElementById('editor-lines').innerHTML = Array.from({length:n},(_,i)=>`<div>${i+1}</div>`).join('');
+  document.getElementById('lexer-lines').innerHTML = Array.from({length:n},(_,i)=>`<div>${i+1}</div>`).join('');
+}
+function syncGutter() {
+  document.querySelector('.code-gutter').scrollTop = document.getElementById('code-editor').scrollTop;
+}
+function updateCursor() {
+  const ta = document.getElementById('code-editor');
+  const t = ta.value.substring(0, ta.selectionStart).split('\n');
+  document.getElementById('editor-cursor').textContent = `Ln ${t.length}, Col ${t[t.length-1].length+1}`;
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const ed = document.getElementById('code-editor');
+  ed.addEventListener('click', updateCursor); ed.addEventListener('keyup', updateCursor);
+});
+
+// ═══════════════════════════════════════════
+// File Ops
+// ═══════════════════════════════════════════
+function openFile() {
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = '.rs,.txt';
+  inp.onchange = e => {
+    const f = e.target.files[0]; if(!f) return;
+    const r = new FileReader();
+    r.onload = ev => { document.getElementById('code-editor').value = ev.target.result;
+      S.source = ev.target.result; updateGutter(); setStatus('Opened: '+f.name,'check_circle'); };
+    r.readAsText(f);
+  }; inp.click();
+}
+
+function saveOutput() {
+  const lines = [];
+  lines.push('=== CompilerLab Output ===');
+  lines.push('');
+  lines.push('--- Source ---');
+  lines.push(S.source);
+  lines.push('');
+  if (S.tokens.length) {
+    lines.push('--- Tokens ---');
+    S.tokens.filter(t=>t.type!=='EOF').forEach((t,i) => {
+      lines.push(`${String(i).padStart(4)}  ${t.type.padEnd(12)}  ${t.value.padEnd(20)}  ${t.line}  ${t.column}`);
+    });
+    lines.push('');
+  }
+  if (S.quads.length) {
+    lines.push('--- IR Quadruples ---');
+    S.quads.forEach((q,i) => {
+      lines.push(`${String(i).padStart(4)}  (${q.op}, ${q.arg1||'_'}, ${q.arg2||'_'}, ${q.result||'_'})`);
+    });
+    lines.push('');
+  }
+  if (S.assembly) {
+    lines.push('--- Assembly ---');
+    lines.push(S.assembly);
+  }
+  if (S.errors.length) {
+    lines.push('--- Errors ---');
+    S.errors.forEach(e => lines.push('  ' + e.message));
+  }
+  const blob = new Blob([lines.join('\n')], {type:'text/plain'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download='compiler_output.txt';
+  a.click(); URL.revokeObjectURL(url);
+  setStatus('Saved','check_circle');
+}
+
+// ═══════════════════════════════════════════
+// API
+// ═══════════════════════════════════════════
+async function api(method, body) {
+  try {
+    const r = await fetch('/api/'+method, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+    return await r.json();
+  } catch(e) { return {success:false, error:'Network: '+e.message}; }
+}
+
+// ═══════════════════════════════════════════
+// Run Actions
+// ═══════════════════════════════════════════
+async function runLexer() {
+  setStatus('Lexing...','hourglass_top',true);
+  const d = await api('lex', {source: S.source});
+  if (d.success) {
+    S.tokens = d.tokens; S.errors = d.errors.map(e=>({message:'Lexer: '+e}));
+    renderLexer(); updateBadges();
+    setStatus(`Lexer: ${S.tokens.filter(t=>t.type!=='EOF').length} tokens`,'check_circle');
+    switchView('lexer');
+  } else { setStatus('Lexer failed','error'); addError(d.error||'Lexer error'); }
+}
+
+async function runParser() {
+  setStatus('Parsing...','hourglass_top',true);
+  const d = await api('parse', {source: S.source});
+  if (d.success) {
+    S.tokens = d.tokens||[]; S.ast = d.ast; S.trace = d.trace||[]; S.trace_events = d.trace_events||[]; S.errors = [];
+    S.parsed = true;
+    updateBadges(); setStatus('Parser: AST generated','check_circle'); switchView('parser');
+  } else { setStatus('Parser failed','error'); addError(d.error||'Parse failed'); }
+}
+
+async function runPipeline() {
+  setStatus('Running pipeline...','hourglass_top',true);
+  const d = await api('pipeline', {source: S.source});
+  if (d.success) {
+    S.tokens = d.tokens||[]; S.ast = d.ast; S.trace = d.trace||[]; S.trace_events = d.trace_events||[];
+    S.quads = d.quads||[]; S.assembly = d.assembly||'';
+    S.symbolTable = d.symbol_table||{};
+    S.errors = (d.semantic_errors||[]).map(e=>({message:'Semantic: '+e.message}));
+    S.stats = d.stats||{}; S.parsed = true;
+    updateAll(); updateBadges(); updateEditorStats();
+    setStatus('Pipeline complete','check_circle');
+    switchView('ast');
+  } else if (d.stage==='lexer') { S.tokens=d.tokens||[]; S.errors=(d.lex_errors||[]).map(e=>({message:'Lexer: '+e})); renderLexer(); updateBadges(); switchView('lexer'); setStatus('Stopped at Lexer','error');
+  } else if (d.stage==='parser') { S.tokens=d.tokens||[]; S.trace=d.trace||[]; S.errors=(d.parse_errors||[]).map(e=>({message:'Parser: '+e})); updateBadges(); switchView('parser'); setStatus('Stopped at Parser','error');
+  } else { setStatus('Pipeline failed','error'); addError(d.error||'Error'); }
+}
+
+// ═══════════════════════════════════════════
+// Render: Lexer
+// ═══════════════════════════════════════════
+function renderLexer() {
+  // Highlighted source — compute absolute positions from line/column
+  const codeDiv = document.getElementById('lexer-code');
+  const display = S.tokens.filter(t => t.type !== 'EOF');
+  const src = S.source;
+
+  // Precompute line start offsets (absolute positions)
+  const lineStarts = [0];
+  for (let i = 0; i < src.length; i++) {
+    if (src[i] === '\n') lineStarts.push(i + 1);
+  }
+
+  // Build segments: token spans interleaved with raw text
+  const segments = [];
+  let lastAbsEnd = 0;
+  for (let i = 0; i < display.length; i++) {
+    const t = display[i];
+    const absStart = (lineStarts[t.line - 1] || 0) + t.column - 1;
+    const absEnd = absStart + t.value.length;
+
+    // Gap before this token
+    if (absStart > lastAbsEnd) {
+      segments.push({text: src.substring(lastAbsEnd, absStart), cls: '', tokIdx: -1});
+    }
+    // The token itself
+    segments.push({text: t.value, cls: tokCls(t.type), tokIdx: i});
+    lastAbsEnd = absEnd;
+  }
+  // Trailing text
+  if (lastAbsEnd < src.length) {
+    segments.push({text: src.substring(lastAbsEnd), cls: '', tokIdx: -1});
+  }
+
+  let html = segments.map((s) => {
+    if (s.tokIdx < 0) return escHtml(s.text);
+    return `<span class="tok-span ${s.cls}" data-tok="${s.tokIdx}" onmouseenter="highlightToken(${s.tokIdx})" onmouseleave="unhighlightToken()" onclick="selectToken(${s.tokIdx})">${escHtml(s.text)}</span>`;
+  }).join('');
+  codeDiv.innerHTML = html;
+
+  // Token table
+  const tbody = document.getElementById('lexer-tbody');
+  document.getElementById('lexer-token-count').textContent = `Total: ${display.length}`;
+  tbody.innerHTML = display.map((t,i) => {
+    return `<tr class="tok-row" data-row="${i}" onmouseenter="highlightToken(${i})" onmouseleave="unhighlightToken()" onclick="selectToken(${i})">
+      <td class="px-3 py-1 border-b border-outline-variant/30 text-outline font-mono text-[11px]">0x${i.toString(16).padStart(2,'0')}</td>
+      <td class="px-3 py-1 border-b border-outline-variant/30"><span class="tb ${tbCls(t.type)}">${t.type}</span></td>
+      <td class="px-3 py-1 border-b border-outline-variant/30 font-mono ${tokValCls(t.type)}">${escHtml(t.value)}</td>
+      <td class="px-3 py-1 border-b border-outline-variant/30 text-outline">${t.line}</td>
+      <td class="px-3 py-1 border-b border-outline-variant/30 text-outline">${t.column}</td>
+    </tr>`;
+  }).join('');
+
+  // Stats
+  const kw = ['FN','LET','IF','ELSE','WHILE','RETURN','MUT','FOR','IN','LOOP','BREAK','CONTINUE','I32'];
+  const kwCount = display.filter(t => kw.includes(t.type)).length;
+  const idCount = display.filter(t => t.type === 'ID').length;
+  const numCount = display.filter(t => t.type === 'NUM').length;
+  const opCount = display.filter(t => ['=','+','-','*','/','==','>','>=','<','<=','!=','->','&','.','..','..='].includes(t.type)).length;
+  document.getElementById('lexer-stats').textContent = `${display.length} tokens | ${kwCount} KW ${idCount} ID ${numCount} NUM ${opCount} OP`;
+  document.getElementById('lexer-detail-stats').innerHTML =
+    `<div>Keywords: ${kwCount}</div><div>Identifiers: ${idCount}</div><div>Numbers: ${numCount}</div><div>Operators: ${opCount}</div><div>Total: ${display.length}</div>`;
+}
+
+function highlightToken(idx) {
+  document.querySelectorAll('.tok-span.highlighted').forEach(e => e.classList.remove('highlighted'));
+  document.querySelectorAll('.tok-row.active').forEach(e => e.classList.remove('active'));
+  const spans = document.querySelectorAll('.tok-span');
+  if (spans[idx]) spans[idx].classList.add('highlighted');
+  const row = document.querySelector(`.tok-row[data-row="${idx}"]`);
+  if (row) row.classList.add('active');
+  const t = S.tokens.filter(t=>t.type!=='EOF')[idx];
+  if (t) showTokenDetail(t, idx);
+}
+
+function unhighlightToken() {
+  // Don't remove if selected via click
+  document.querySelectorAll('.tok-span.highlighted').forEach(e => {
+    if (!e.classList.contains('selected')) e.classList.remove('highlighted');
+  });
+  document.querySelectorAll('.tok-row.active').forEach(e => {
+    if (parseInt(e.dataset.row) !== S.selectedTokenIdx) e.classList.remove('active');
+  });
+}
+
+function selectToken(idx) {
+  S.selectedTokenIdx = idx;
+  document.querySelectorAll('.tok-span').forEach(e => e.classList.remove('selected','highlighted'));
+  document.querySelectorAll('.tok-row.active').forEach(e => e.classList.remove('active'));
+  const spans = document.querySelectorAll('.tok-span');
+  if (spans[idx]) { spans[idx].classList.add('highlighted','selected'); }
+  const row = document.querySelector(`.tok-row[data-row="${idx}"]`);
+  if (row) row.classList.add('active');
+  const t = S.tokens.filter(t=>t.type!=='EOF')[idx];
+  if (t) showTokenDetail(t, idx);
+}
+
+function showTokenDetail(t, idx) {
+  document.getElementById('lexer-detail-content').innerHTML = `
+    <div class="flex justify-between"><span class="text-outline">Index</span><span class="font-mono">0x${idx.toString(16).padStart(2,'0')}</span></div>
+    <div class="flex justify-between"><span class="text-outline">Type</span><span class="tb ${tbCls(t.type)}">${t.type}</span></div>
+    <div class="flex justify-between"><span class="text-outline">Value</span><span class="font-mono">${escHtml(t.value)}</span></div>
+    <div class="flex justify-between"><span class="text-outline">Line</span><span>${t.line}</span></div>
+    <div class="flex justify-between"><span class="text-outline">Column</span><span>${t.column}</span></div>
+  `;
+}
+
+// ═══════════════════════════════════════════
+// Render: Parser Tree (from trace events)
+// ═══════════════════════════════════════════
+function buildParseTree(events) {
+  /* Build a hierarchical tree from parser trace events.
+     Each 'enter' creates a parent node; 'consume' tokens are leaves;
+     'exit' closes the current parent. */
+  if (!events || events.length === 0) return null;
+  const root = { name: 'program', label: '', children: [] };
+  const stack = [root];
+  for (const e of events) {
+    if (e.type === 'enter') {
+      const node = { name: e.func_name || 'parse', label: e.rule || '', children: [] };
+      stack[stack.length - 1].children.push(node);
+      stack.push(node);
+    } else if (e.type === 'consume') {
+      const val = e.message.replace('消费 Token [', '').replace(']', '');
+      const leaf = { name: val, label: e.token_info || '' };
+      stack[stack.length - 1].children.push(leaf);
+    } else if (e.type === 'exit') {
+      if (stack.length > 1) stack.pop();
+    } else if (e.type === 'error') {
+      const msg = e.message.replace('错误: ', '');
+      stack[stack.length - 1].children.push({ name: '⚠ ' + msg, label: 'error' });
+    }
+  }
+  return root;
+}
+
+function renderParserTree() {
+  // Build parse tree from trace events (not AST!)
+  const events = S.trace_events && S.trace_events.length > 0 ? S.trace_events : null;
+  if (!events) { /* try AST as fallback */
+    if (!S.ast) return;
+    const fallback = {name:'AST (no trace)',children:[{name:S.ast.name,label:S.ast.label,children:S.ast.children}]};
+    drawPTree(fallback); return;
+  }
+  const ptree = buildParseTree(events);
+  if (!ptree) return;
+  drawPTree(ptree);
+}
+
+function drawPTree(treeData) {
+  document.getElementById('parser-placeholder').style.display = 'none';
+  const svg = document.getElementById('parser-tree-svg');
+  const ctn = document.getElementById('parser-tree-container');
+  const w = ctn.clientWidth, h = ctn.clientHeight;
+  svg.innerHTML = '';
+  svg.setAttribute('width',w); svg.setAttribute('height',h);
+
+  const root = d3.hierarchy(treeData, d => d.children && d.children.length ? d.children : null);
+  if (!root.children) return;
+
+  const tree = d3.tree().nodeSize([140, 40]);
+  tree(root);
+  let minX=Infinity,maxX=-Infinity;
+  root.each(d=>{if(d.x<minX)minX=d.x;if(d.x>maxX)maxX=d.x;});
+
+  const g = d3.select(svg).append('g').attr('transform',`translate(${Math.max(70,(w-(maxX-minX))/2-minX)},25)`);
+  S.parserZoom = d3.zoom().scaleExtent([0.3,3]).on('zoom', e=>g.attr('transform',e.transform));
+  d3.select(svg).call(S.parserZoom);
+
+  g.selectAll('.ast-link').data(root.links()).join('path')
+    .attr('d', d3.linkVertical().x(d=>d.x).y(d=>d.y))
+    .attr('fill','none').attr('stroke','#c1c6d7').attr('stroke-width',1.2);
+
+  const nodes = g.selectAll('.ast-node').data(root.descendants()).join('g')
+    .attr('transform',d=>`translate(${d.x},${d.y})`)
+    .on('mouseover', (e,d) => { showPSNode(e,d); }).on('mouseout', hideTip);
+
+  nodes.append('rect')
+    .attr('width', d => Math.max(40, (d.data.name.length|0)*7+18))
+    .attr('height', d => d.data.label && d.data.label !== 'error' ? 30 : 18)
+    .attr('x', d => -Math.max(40, (d.data.name.length|0)*7+18)/2)
+    .attr('y', d => d.data.label && d.data.label !== 'error' ? -15 : -9)
+    .attr('fill', d => pColor(d).bg).attr('stroke', d => pColor(d).border).attr('stroke-width',1.2).attr('rx',3).attr('ry',3);
+
+  nodes.append('text').attr('dy', d => d.data.label && d.data.label !== 'error' ? '-2' : '4')
+    .attr('text-anchor','middle').attr('fill', d => pColor(d).text)
+    .attr('font-weight','500').attr('font-size','9px').text(d => d.data.name.length > 15 ? d.data.name.substring(0,14)+'…' : d.data.name);
+
+  nodes.filter(d => d.data.label && d.data.label !== 'error').append('text')
+    .attr('dy','12').attr('text-anchor','middle').attr('fill','#888').attr('font-size','8px')
+    .text(d => d.data.label.length > 22 ? d.data.label.substring(0,21)+'…' : d.data.label);
+}
+
+function showPSNode(event, d) {
+  const info = document.getElementById('parser-node-info');
+  let h = `<b>${escHtml(d.data.name)}</b>`;
+  if (d.data.label) h += `<br/><span class="text-outline">${escHtml(d.data.label)}</span>`;
+  info.innerHTML = h;
+  const tip = document.createElement('div'); tip.className='d3-tip'; tip.id='ps-tip';
+  tip.innerHTML = h; document.body.appendChild(tip);
+  tip.style.left = (event.pageX-tip.offsetWidth/2)+'px'; tip.style.top = (event.pageY-35)+'px';
+}
+function hideTip() { document.querySelectorAll('.d3-tip').forEach(t => t.remove()); }
+
+function zoomTree(f) { if(S.parserZoom) d3.select('#parser-tree-svg').transition().duration(300).call(S.parserZoom.scaleBy,f); }
+function resetTree() { if(S.parserZoom) d3.select('#parser-tree-svg').transition().duration(300).call(S.parserZoom.transform,d3.zoomIdentity); }
+
+// ═══════════════════════════════════════════
+// Render: LR (Parsing Process Animation)
+// ═══════════════════════════════════════════
+let lrEvents = [];
+
+function renderLR() {
+  if (!S.trace_events || S.trace_events.length === 0) {
+    if (!S.trace || S.trace.length === 0) return;
+    // fallback: reconstruct from trace messages
+    const evts = [];
+    for (let i = 0; i < S.trace.length; i++) {
+      const m = S.trace[i];
+      let type = 'consume';
+      if (m.includes('开始')) type = 'begin';
+      else if (m.includes('进入 →')) type = 'enter';
+      else if (m.includes('退出 ←')) type = 'exit';
+      else if (m.includes('消费')) type = 'consume';
+      else if (m.includes('错误')) type = 'error';
+      else if (m.includes('成功') || m.includes('失败')) type = 'end';
+      evts.push({ step: i+1, type, func_name: '', message: m, stack: [], rule: '' });
+    }
+    lrEvents = evts;
+  } else {
+    lrEvents = S.trace_events;
+  }
+  S.lrStep = 0;
+  S.lrPlaying = false;
+  if (S.lrTimer) { clearInterval(S.lrTimer); S.lrTimer = null; }
+  document.getElementById('lr-play-icon').textContent = 'play_arrow';
+  lrRenderStep();
+}
+
+function lrRenderStep() {
+  const idx = S.lrStep;
+  const total = lrEvents.length;
+  document.getElementById('lr-step-indicator').textContent = `Step ${idx} / ${total}`;
+
+  // Trace list
+  const trace = document.getElementById('lr-trace');
+  trace.innerHTML = lrEvents.map((e,i) => {
+    const cls = `lr-step ${e.type}${i === idx ? ' active' : ''}`;
+    return `<div class="${cls}" onclick="lrGoto(${i})">${i+1}. ${escHtml(e.message)}</div>`;
+  }).join('');
+  // scroll into view
+  const active = trace.querySelector('.active');
+  if (active) active.scrollIntoView({block:'nearest', behavior:'smooth'});
+
+  // Call stack
+  const stack = document.getElementById('lr-callstack');
+  const activeEvt = lrEvents[idx];
+  if (activeEvt) {
+    // Use stack snapshot from event if available, otherwise reconstruct
+    let stackFrames = [];
+    if (activeEvt.stack && activeEvt.stack.length > 0) {
+      stackFrames = activeEvt.stack.map((name, i) => ({ name, depth: i+1 }));
+    } else {
+      let depth = 0;
+      for (let i = 0; i <= idx && i < lrEvents.length; i++) {
+        const e = lrEvents[i];
+        if (e.type === 'enter') { depth++; stackFrames.push({name: e.func_name || e.message.replace('进入 →',''), depth}); }
+        else if (e.type === 'exit') { if (stackFrames.length) stackFrames.pop(); depth = Math.max(0, depth-1); }
+      }
+    }
+    if (stackFrames.length === 0) {
+      stack.innerHTML = '<div class="text-outline text-[12px]">(top level)</div>';
+    } else {
+      stack.innerHTML = stackFrames.map(f =>
+        `<div class="stack-frame" style="margin-left:${(f.depth-1)*12}px">${escHtml(f.name)}</div>`
+      ).join('');
+    }
+
+    // Step detail
+    document.getElementById('lr-step-info').innerHTML = `
+      <div><span class="text-outline">Step:</span> ${activeEvt.step} / ${total}</div>
+      <div><span class="text-outline">Type:</span> ${activeEvt.type}</div>
+      <div>${escHtml(activeEvt.message)}</div>`;
+    document.getElementById('lr-token-info').innerHTML = activeEvt.type === 'consume'
+      ? `<span class="font-mono">${escHtml(activeEvt.message)}</span>`
+      : '—';
+    // Try to extract grammar rule from message
+    const ruleMatch = activeEvt.message.match(/→\s*(.+)/);
+    document.getElementById('lr-rule-info').textContent = ruleMatch ? ruleMatch[1] : '—';
+  }
+}
+
+function lrNext() {
+  if (S.lrStep < lrEvents.length - 1) { S.lrStep++; lrRenderStep(); }
+  else lrPause();
+}
+function lrPrev() {
+  if (S.lrStep > 0) { S.lrStep--; lrRenderStep(); }
+}
+function lrGoto(i) { S.lrStep = i; lrRenderStep(); }
+function lrReset() { S.lrStep = 0; lrRenderStep(); }
+function lrToggle() {
+  if (S.lrPlaying) lrPause(); else lrPlay();
+}
+function lrPlay() {
+  if (S.lrStep >= lrEvents.length - 1) S.lrStep = 0;
+  S.lrPlaying = true;
+  document.getElementById('lr-play-icon').textContent = 'pause';
+  const speed = 1000 - (parseInt(document.getElementById('lr-speed').value) * 90);
+  S.lrTimer = setInterval(() => {
+    if (S.lrStep >= lrEvents.length - 1) { lrPause(); return; }
+    S.lrStep++; lrRenderStep();
+  }, Math.max(100, speed));
+}
+function lrPause() {
+  S.lrPlaying = false;
+  document.getElementById('lr-play-icon').textContent = 'play_arrow';
+  if (S.lrTimer) { clearInterval(S.lrTimer); S.lrTimer = null; }
+}
+
+// ═══════════════════════════════════════════
+// Render: AST (D3.js Tree)
+// ═══════════════════════════════════════════
+function renderAST() {
+  if (!S.ast) return;
+  document.getElementById('ast-placeholder').style.display = 'none';
+  const svg = document.getElementById('ast-svg');
+  const ctn = document.getElementById('ast-container');
+  const w = ctn.clientWidth, h = ctn.clientHeight;
+  svg.innerHTML = ''; svg.setAttribute('width',w); svg.setAttribute('height',h);
+
+  const root = d3.hierarchy(S.ast, d => d.children);
+  const tree = d3.tree().nodeSize([200, 65]);
+  tree(root);
+  let minX=Infinity,maxX=-Infinity;
+  root.each(d=>{if(d.x<minX)minX=d.x;if(d.x>maxX)maxX=d.x;});
+
+  const g = d3.select(svg).append('g').attr('transform',`translate(${Math.max(100,(w-(maxX-minX))/2-minX)},40)`);
+  S.astZoom = d3.zoom().scaleExtent([0.3,3]).on('zoom', e=>g.attr('transform',e.transform));
+  d3.select(svg).call(S.astZoom);
+
+  g.selectAll('.ast-link').data(root.links()).join('path')
+    .attr('d', d3.linkVertical().x(d=>d.x).y(d=>d.y))
+    .attr('fill','none').attr('stroke','#c1c6d7').attr('stroke-width',1.5);
+
+  const nodes = g.selectAll('.ast-node').data(root.descendants()).join('g')
+    .attr('transform',d=>`translate(${d.x},${d.y})`)
+    .on('mouseover',(e,d)=>{showASTNode(d);showTip(e,d);}).on('mouseout',hideTip);
+
+  nodes.append('rect')
+    .attr('width', d => Math.max(60, (d.data.name.length+(d.data.label||'').length)*7+24))
+    .attr('height', d => d.data.label ? 38 : 24)
+    .attr('x', d => -Math.max(60, (d.data.name.length+(d.data.label||'').length)*7+24)/2)
+    .attr('y', d => d.data.label ? -19 : -12)
+    .attr('fill', d=>nColor(d.data.name).bg).attr('stroke',d=>nColor(d.data.name).border)
+    .attr('stroke-width',1.5).attr('rx',5).attr('ry',5);
+
+  nodes.append('text').attr('dy', d=>d.data.label?'-4':'4').attr('text-anchor','middle')
+    .attr('fill', d=>nColor(d.data.name).text).attr('font-weight','600').attr('font-size','11px').text(d=>d.data.name);
+  nodes.filter(d=>d.data.label).append('text').attr('dy','14').attr('text-anchor','middle')
+    .attr('fill','#555').attr('font-size','10px').text(d=>d.data.label);
+  nodes.filter(d=>d.data.extra).append('text').attr('dy', d=>d.data.label?'26':'16').attr('text-anchor','middle')
+    .attr('fill','#999').attr('font-size','9px').text(d=>d.data.extra);
+}
+
+function showASTNode(d) {
+  let h = `<b>${d.data.name}</b>`;
+  if (d.data.label) h += `<br/>${d.data.label}`;
+  if (d.data.extra) h += `<br/><span class="text-outline">${d.data.extra}</span>`;
+  document.getElementById('ast-node-info').innerHTML = h;
+}
+function showTip(event,d) {
+  const tip=document.createElement('div'); tip.className='d3-tip'; tip.id='ast-tip';
+  tip.innerHTML = `<b>${d.data.name}</b>${d.data.label?'<br/>'+d.data.label:''}${d.data.extra?'<br/><span style="color:#aaa;">'+d.data.extra+'</span>':''}`;
+  document.body.appendChild(tip);
+  tip.style.left = (event.pageX-tip.offsetWidth/2)+'px'; tip.style.top = (event.pageY-40)+'px';
+}
+
+function zoomAST(f) { if(S.astZoom) d3.select('#ast-svg').transition().duration(300).call(S.astZoom.scaleBy,f); }
+function resetAST() { if(S.astZoom) d3.select('#ast-svg').transition().duration(300).call(S.astZoom.transform,d3.zoomIdentity); }
+
+// ═══════════════════════════════════════════
+// Render: Issues
+// ═══════════════════════════════════════════
+function renderIssues() {
+  const list = document.getElementById('issues-list');
+  if (S.errors.length === 0) {
+    list.innerHTML = '<div class="text-green-600 font-body-sm flex items-center gap-2"><span class="material-symbols-outlined text-[16px]">check_circle</span>No errors</div>';
+  } else {
+    list.innerHTML = S.errors.map((e,i) => {
+      const isE = e.message.includes('rror')||e.message.includes('fail');
+      return `<div class="flex items-start gap-2 px-2 py-2 ${isE?'bg-error-container/30':'bg-yellow-50'} rounded mb-1 cursor-pointer hover:opacity-80" onclick="showErrorDetail(${i})">
+        <span class="material-symbols-outlined text-[16px] ${isE?'text-error':'text-yellow-600'}">${isE?'error':'warning'}</span>
+        <span class="font-code-sm text-[13px] ${isE?'text-error':'text-yellow-800'}">${escHtml(e.message)}</span>
+      </div>`;
+    }).join('');
+  }
+}
+
+function showErrorDetail(idx) {
+  const e = S.errors[idx];
+  document.getElementById('issues-error-info').innerHTML = `
+    <div class="flex justify-between mb-1"><span class="text-outline">#</span><span>${idx}</span></div>
+    <div class="flex justify-between mb-1"><span class="text-outline">Severity</span><span class="text-error">${e.message.includes('rror')?'Error':'Warning'}</span></div>
+    <div class="mt-2 p-2 bg-error-container/30 rounded font-code-sm text-[13px]">${escHtml(e.message)}</div>`;
+}
+
+// ═══════════════════════════════════════════
+// Update All
+// ═══════════════════════════════════════════
+function updateAll() {
+  renderLexer();
+  if (S.ast) { renderParserTree(); renderAST(); }
+  renderLR();
+  renderIssues();
+  updateEditorStats();
+}
+
+function updateEditorStats() {
+  const s = S.stats;
+  if (!s || !s.total_tokens) return;
+  document.getElementById('st-tokens').textContent = s.total_tokens||'—';
+  document.getElementById('st-ast').textContent = s.ast_nodes||'—';
+  document.getElementById('st-ir').textContent = s.ir_instructions||'—';
+  document.getElementById('st-errs').textContent = S.errors.length;
+  document.getElementById('editor-output').innerHTML = `Pipeline complete: ${s.total_tokens} tokens, ${s.ast_nodes} AST nodes, ${s.ir_instructions} IR insts`;
+
+  // Symbol table
+  const symBody = document.getElementById('editor-sym-body');
+  const syms = Object.entries(S.symbolTable);
+  if (syms.length === 0) {
+    symBody.innerHTML = '<tr><td colspan="4" class="text-outline py-4 text-center">暂无符号</td></tr>';
+  } else {
+    symBody.innerHTML = syms.map(([name,info]) => {
+      return `<tr><td class="py-1 pr-2 font-bold text-primary">${escHtml(name)}</td>
+        <td class="py-1 pr-2 text-outline">${escHtml(info.kind||'-')}</td>
+        <td class="py-1 pr-2">${escHtml(info.type||'i32')}</td>
+        <td class="py-1">${info.mutable?'<span class="text-primary">✓</span>':'<span class="text-outline">-</span>'}</td></tr>`;
+    }).join('');
+  }
+
+  document.getElementById('status-bar-info').textContent = `${s.total_tokens} Tok | ${s.ast_nodes} AST | ${s.ir_instructions} IR`;
+}
+
+function updateBadges() {
+  const tc = S.tokens.filter(t=>t.type!=='EOF').length;
+  const b = document.getElementById('badge-lexer');
+  if (tc > 0) { b.classList.remove('hidden'); b.textContent = tc; } else b.classList.add('hidden');
+  const bi = document.getElementById('badge-issues');
+  if (S.errors.length > 0) { bi.classList.remove('hidden'); bi.textContent = S.errors.length; } else bi.classList.add('hidden');
+  document.getElementById('issues-count-badge').classList.toggle('hidden', S.errors.length === 0);
+  const cb = document.getElementById('issues-count-badge').querySelector('span');
+  if (cb) cb.textContent = S.errors.length;
+}
+
+// ═══════════════════════════════════════════
+// Utility
+// ═══════════════════════════════════════════
+function setStatus(text, icon, spin) {
+  document.getElementById('status-text').textContent = text;
+  const ie = document.getElementById('status-icon');
+  ie.textContent = icon||'check_circle';
+  ie.classList.toggle('spin',!!spin);
+}
+function addError(msg) { S.errors.push({message:msg}); updateBadges(); }
+function clearAll() {
+  S.tokens=[]; S.ast=null; S.trace=[]; S.trace_events=[]; S.quads=[]; S.assembly='';
+  S.symbolTable={}; S.errors=[]; S.stats={}; S.parsed=false;
+  S.lrStep=0; S.lrPlaying=false; if(S.lrTimer){clearInterval(S.lrTimer);S.lrTimer=null;}
+  document.getElementById('lexer-tbody').innerHTML='';
+  document.getElementById('lexer-code').innerHTML='';
+  document.getElementById('parser-placeholder').style.display='flex';
+  document.getElementById('parser-tree-svg').innerHTML='';
+  document.getElementById('ast-placeholder').style.display='flex';
+  document.getElementById('ast-svg').innerHTML='';
+  document.getElementById('lr-trace').innerHTML='';
+  document.getElementById('lr-callstack').innerHTML='<div class="text-outline text-[12px]">执行分析后查看</div>';
+  document.getElementById('issues-list').innerHTML='<div class="text-outline font-body-sm">暂无错误</div>';
+  document.getElementById('editor-stats').querySelectorAll('span:not(.text-error)').forEach(s=>s.textContent='—');
+  document.getElementById('editor-sym-body').innerHTML='<tr><td colspan="4" class="text-outline py-4 text-center">暂无数据</td></tr>';
+  document.getElementById('editor-output').innerHTML='Ready';
+  document.getElementById('status-bar-info').textContent='';
+  updateBadges(); setStatus('Cleared','delete_sweep');
+}
+
+function escHtml(s) { if(!s) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function tokCls(type) {
+  const kws = ['FN','LET','IF','ELSE','WHILE','RETURN','MUT','FOR','IN','LOOP','BREAK','CONTINUE'];
+  if (kws.includes(type)) return 'syn-kw';
+  if (type === 'I32') return 'syn-type';
+  if (type === 'NUM') return 'syn-num';
+  if (type === 'ID') return 'syn-id';
+  if (type === 'ERROR') return 'text-error';
+  if (['=','+','-','*','/','==','>','>=','<','<=','!=','->','&','.','..','..='].includes(type)) return 'syn-op';
+  return 'syn-delim';
+}
+function tokValCls(type) {
+  if(['NUM'].includes(type)) return 'text-error font-bold';
+  if(['FN','LET','IF','ELSE','WHILE','RETURN','MUT','FOR','IN','LOOP','BREAK','CONTINUE','I32'].includes(type)) return 'text-primary font-bold';
+  if(type==='ID') return 'text-on-surface';
+  if(type==='ERROR') return 'text-error';
+  return 'text-tertiary';
+}
+function tbCls(type) {
+  if(['FN','LET','IF','ELSE','WHILE','RETURN','MUT','FOR','IN','LOOP','BREAK','CONTINUE','I32'].includes(type)) return 'tb-kw';
+  if(type==='ID') return 'tb-id'; if(type==='NUM') return 'tb-num'; if(type==='ERROR') return 'tb-err'; if(type==='EOF') return 'tb-eof';
+  if(['=','+','-','*','/','==','>','>=','<','<=','!=','->','&','.','..','..='].includes(type)) return 'tb-op';
+  return 'tb-delim';
+}
+function pColor(d) {
+  if (!d || !d.data) return {bg:'#f5f5f5',border:'#ccc',text:'#333'};
+  const n = d.data.name||'', l = d.data.label||'';
+  if (l === 'error') return {bg:'#ffdad6',border:'#ef9a9a',text:'#c62828'};
+  if (d.children) return {bg:'#e8eaf6',border:'#9fa8da',text:'#283593'};  // non-terminal
+  return {bg:'#e8f5e9',border:'#a5d6a7',text:'#1b5e20'};  // leaf (consumed token)
+}
+function nColor(name) {
+  const d=['Program','FunctionDecl','Param','VarDeclStmt','AssignStmt'];
+  const s=['Block','ReturnStmt','ExprStmt','IfStmt','WhileStmt','ForStmt','EmptyStmt'];
+  const e=['BinaryExpr','LValue','FuncCall','UnaryMinus','Range','ArrayAccess'];
+  const t=['Type','ArrayType']; const l=['NumberLiteral','ArrayLiteral'];
+  if(d.includes(name)) return {bg:'#e3f2fd',border:'#90caf9',text:'#0d47a1'};
+  if(s.includes(name)) return {bg:'#e8f5e9',border:'#a5d6a7',text:'#1b5e20'};
+  if(e.includes(name)) return {bg:'#fff3e0',border:'#ffcc80',text:'#e65100'};
+  if(t.includes(name)) return {bg:'#f3e5f5',border:'#ce93d8',text:'#6a1b9a'};
+  if(l.includes(name)) return {bg:'#fce4ec',border:'#ef9a9a',text:'#c62828'};
+  return {bg:'#f5f5f5',border:'#ccc',text:'#333'};
+}
+</script>
+</body>
+</html>
