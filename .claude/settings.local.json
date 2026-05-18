@@ -1,7 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python -c \"\nimport sys, os\nsys.path.insert(0, ''.'')\nos.environ[''FLASK_ENV''] = ''development''\n\n# Import web_app to ensure no module conflicts\nfrom web_app import app, _ast_to_dict, _token_to_dict, _compute_stats\nprint(''Flask app imported successfully'')\nprint(f''Routes: {[r.rule for r in app.url_map.iter_rules() if r.rule.startswith(\"\"/api\"\")]}'')\nprint()\nprint(''=== ast.py conflict is FIXED ==='')\n\")"
+      "Bash(python -c:*)"
     ],
     "deny": [],
     "ask": []

@@ -270,19 +270,14 @@ tailwind.config = {
     <!-- ===== VIEW: Parser (Syntax Tree) ===== -->
     <div id="view-parser" class="view-panel flex-1 flex overflow-hidden">
       <div class="flex-1 flex flex-col overflow-hidden">
-        <div class="h-7 bg-surface-container px-3 flex items-center justify-between border-b border-outline-variant flex-shrink-0">
-          <span class="font-label-caps text-on-surface-variant">SYNTAX TREE</span>
-          <span class="flex gap-1">
-            <button onclick="zoomTree(1.2)" class="text-secondary hover:text-on-surface text-xs p-0.5 rounded hover:bg-surface-container-high" title="Zoom In"><span class="material-symbols-outlined text-[16px]">zoom_in</span></button>
-            <button onclick="zoomTree(0.8)" class="text-secondary hover:text-on-surface text-xs p-0.5 rounded hover:bg-surface-container-high" title="Zoom Out"><span class="material-symbols-outlined text-[16px]">zoom_out</span></button>
-            <button onclick="resetTree()" class="text-secondary hover:text-on-surface text-xs p-0.5 rounded hover:bg-surface-container-high" title="Fit"><span class="material-symbols-outlined text-[16px]">fit_screen</span></button>
-          </span>
+        <div class="h-7 bg-surface-container px-3 flex items-center border-b border-outline-variant flex-shrink-0">
+          <span class="font-label-caps text-on-surface-variant">SYNTAX TREE (Hierarchical)</span>
         </div>
-        <div class="flex-1 overflow-hidden relative" id="parser-tree-container">
-          <div class="absolute inset-0 flex items-center justify-center text-outline font-code-sm" id="parser-placeholder">
+        <div class="flex-1 overflow-auto relative font-code-sm text-[13px] leading-relaxed" id="parser-tree-container">
+          <div class="flex items-center justify-center text-outline font-code-sm" id="parser-placeholder" style="height:100%">
             请先执行语法分析
           </div>
-          <svg id="parser-tree-svg" class="w-full h-full"></svg>
+          <pre id="parser-tree-text" class="p-4 whitespace-pre-wrap hidden"></pre>
         </div>
       </div>
       <!-- Detail panel: Node Properties -->
@@ -813,104 +808,52 @@ function showTokenDetail(t, idx) {
 }
 
 // ═══════════════════════════════════════════
-// Render: Parser Tree (from trace events)
+// Render: Parser Tree (Hierarchical Text)
 // ═══════════════════════════════════════════
-function buildParseTree(events) {
-  /* Build a hierarchical tree from parser trace events.
-     Each 'enter' creates a parent node; 'consume' tokens are leaves;
-     'exit' closes the current parent. */
-  if (!events || events.length === 0) return null;
-  const root = { name: 'program', label: '', children: [] };
-  const stack = [root];
+function renderParserTree() {
+  const placeholder = document.getElementById('parser-placeholder');
+  const textPre = document.getElementById('parser-tree-text');
+  let text = '';
+  if (S.trace_events && S.trace_events.length > 0) {
+    text = _buildSyntaxText(S.trace_events);
+  } else if (S.ast) {
+    text = _buildASTText(S.ast, 0);
+  } else { return; }
+  placeholder.style.display = 'none';
+  textPre.classList.remove('hidden');
+  textPre.textContent = text;
+}
+function _buildSyntaxText(events) {
+  const lines = []; let indent = 0;
   for (const e of events) {
+    const p = '  '.repeat(indent);
     if (e.type === 'enter') {
-      const node = { name: e.func_name || 'parse', label: e.rule || '', children: [] };
-      stack[stack.length - 1].children.push(node);
-      stack.push(node);
-    } else if (e.type === 'consume') {
-      const val = e.message.replace('消费 Token [', '').replace(']', '');
-      const leaf = { name: val, label: e.token_info || '' };
-      stack[stack.length - 1].children.push(leaf);
+      const rule = e.rule ? '  \u2190 ' + e.rule : '';
+      lines.push(p + '\u2514\u2500 ' + (e.func_name || 'parse') + rule);
+      indent++;
     } else if (e.type === 'exit') {
-      if (stack.length > 1) stack.pop();
+      indent = Math.max(0, indent - 1);
+    } else if (e.type === 'consume') {
+      const val = e.message ? e.message.replace('消费 Token [', '').replace(']', '') : '';
+      lines.push(p + '\u2514\u2500 ' + val + '  [' + (e.token_info || '') + ']');
     } else if (e.type === 'error') {
-      const msg = e.message.replace('错误: ', '');
-      stack[stack.length - 1].children.push({ name: '⚠ ' + msg, label: 'error' });
+      lines.push(p + '\u2514\u2500 \u26a0 ' + (e.message || 'error'));
     }
   }
-  return root;
+  return lines.join('\n');
 }
-
-function renderParserTree() {
-  // Build parse tree from trace events (not AST!)
-  const events = S.trace_events && S.trace_events.length > 0 ? S.trace_events : null;
-  if (!events) { /* try AST as fallback */
-    if (!S.ast) return;
-    const fallback = {name:'AST (no trace)',children:[{name:S.ast.name,label:S.ast.label,children:S.ast.children}]};
-    drawPTree(fallback); return;
+function _buildASTText(node, depth) {
+  if (!node) return '';
+  const indent = '  '.repeat(depth);
+  let line = indent + '\u2514\u2500 ' + node.name;
+  if (node.label) line += '  (' + node.label + ')';
+  if (node.extra) line += '  [' + node.extra + ']';
+  let r = line;
+  if (node.children && node.children.length > 0) {
+    r += '\n' + node.children.map(c => _buildASTText(c, depth + 1)).join('\n');
   }
-  const ptree = buildParseTree(events);
-  if (!ptree) return;
-  drawPTree(ptree);
+  return r;
 }
-
-function drawPTree(treeData) {
-  document.getElementById('parser-placeholder').style.display = 'none';
-  const svg = document.getElementById('parser-tree-svg');
-  const ctn = document.getElementById('parser-tree-container');
-  const w = ctn.clientWidth, h = ctn.clientHeight;
-  svg.innerHTML = '';
-  svg.setAttribute('width',w); svg.setAttribute('height',h);
-
-  const root = d3.hierarchy(treeData, d => d.children && d.children.length ? d.children : null);
-  if (!root.children) return;
-
-  const tree = d3.tree().nodeSize([140, 40]);
-  tree(root);
-  let minX=Infinity,maxX=-Infinity;
-  root.each(d=>{if(d.x<minX)minX=d.x;if(d.x>maxX)maxX=d.x;});
-
-  const g = d3.select(svg).append('g').attr('transform',`translate(${Math.max(70,(w-(maxX-minX))/2-minX)},25)`);
-  S.parserZoom = d3.zoom().scaleExtent([0.3,3]).on('zoom', e=>g.attr('transform',e.transform));
-  d3.select(svg).call(S.parserZoom);
-
-  g.selectAll('.ast-link').data(root.links()).join('path')
-    .attr('d', d3.linkVertical().x(d=>d.x).y(d=>d.y))
-    .attr('fill','none').attr('stroke','#c1c6d7').attr('stroke-width',1.2);
-
-  const nodes = g.selectAll('.ast-node').data(root.descendants()).join('g')
-    .attr('transform',d=>`translate(${d.x},${d.y})`)
-    .on('mouseover', (e,d) => { showPSNode(e,d); }).on('mouseout', hideTip);
-
-  nodes.append('rect')
-    .attr('width', d => Math.max(40, (d.data.name.length|0)*7+18))
-    .attr('height', d => d.data.label && d.data.label !== 'error' ? 30 : 18)
-    .attr('x', d => -Math.max(40, (d.data.name.length|0)*7+18)/2)
-    .attr('y', d => d.data.label && d.data.label !== 'error' ? -15 : -9)
-    .attr('fill', d => pColor(d).bg).attr('stroke', d => pColor(d).border).attr('stroke-width',1.2).attr('rx',3).attr('ry',3);
-
-  nodes.append('text').attr('dy', d => d.data.label && d.data.label !== 'error' ? '-2' : '4')
-    .attr('text-anchor','middle').attr('fill', d => pColor(d).text)
-    .attr('font-weight','500').attr('font-size','9px').text(d => d.data.name.length > 15 ? d.data.name.substring(0,14)+'…' : d.data.name);
-
-  nodes.filter(d => d.data.label && d.data.label !== 'error').append('text')
-    .attr('dy','12').attr('text-anchor','middle').attr('fill','#888').attr('font-size','8px')
-    .text(d => d.data.label.length > 22 ? d.data.label.substring(0,21)+'…' : d.data.label);
-}
-
-function showPSNode(event, d) {
-  const info = document.getElementById('parser-node-info');
-  let h = `<b>${escHtml(d.data.name)}</b>`;
-  if (d.data.label) h += `<br/><span class="text-outline">${escHtml(d.data.label)}</span>`;
-  info.innerHTML = h;
-  const tip = document.createElement('div'); tip.className='d3-tip'; tip.id='ps-tip';
-  tip.innerHTML = h; document.body.appendChild(tip);
-  tip.style.left = (event.pageX-tip.offsetWidth/2)+'px'; tip.style.top = (event.pageY-35)+'px';
-}
-function hideTip() { document.querySelectorAll('.d3-tip').forEach(t => t.remove()); }
-
-function zoomTree(f) { if(S.parserZoom) d3.select('#parser-tree-svg').transition().duration(300).call(S.parserZoom.scaleBy,f); }
-function resetTree() { if(S.parserZoom) d3.select('#parser-tree-svg').transition().duration(300).call(S.parserZoom.transform,d3.zoomIdentity); }
 
 // ═══════════════════════════════════════════
 // Render: LR (Parsing Process Animation)
@@ -1036,38 +979,47 @@ function renderAST() {
   const w = ctn.clientWidth, h = ctn.clientHeight;
   svg.innerHTML = ''; svg.setAttribute('width',w); svg.setAttribute('height',h);
 
+  // Arrow marker definition for straight-line connectors
+  const defs = d3.select(svg).append('defs');
+  defs.append('marker')
+    .attr('id','ast-arrow').attr('viewBox','0 -4 8 8')
+    .attr('refX',10).attr('refY',0)
+    .attr('markerWidth',6).attr('markerHeight',6).attr('orient','auto')
+    .append('path').attr('d','M0,-4L8,0L0,4').attr('fill','#90a4ae');
+
+  // Compact tree layout
   const root = d3.hierarchy(S.ast, d => d.children);
-  const tree = d3.tree().nodeSize([200, 65]);
+  const tree = d3.tree().nodeSize([110, 48]);
   tree(root);
   let minX=Infinity,maxX=-Infinity;
   root.each(d=>{if(d.x<minX)minX=d.x;if(d.x>maxX)maxX=d.x;});
 
-  const g = d3.select(svg).append('g').attr('transform',`translate(${Math.max(100,(w-(maxX-minX))/2-minX)},40)`);
+  const g = d3.select(svg).append('g')
+    .attr('transform',`translate(${Math.max(80,(w-(maxX-minX))/2-minX)},35)`);
   S.astZoom = d3.zoom().scaleExtent([0.3,3]).on('zoom', e=>g.attr('transform',e.transform));
   d3.select(svg).call(S.astZoom);
 
+  // Straight-line edges with arrow markers
+  const NODE_W = 90, NODE_H = 20;
   g.selectAll('.ast-link').data(root.links()).join('path')
-    .attr('d', d3.linkVertical().x(d=>d.x).y(d=>d.y))
-    .attr('fill','none').attr('stroke','#c1c6d7').attr('stroke-width',1.5);
+    .attr('d', d => `M${d.source.x},${d.source.y+NODE_H/2} L${d.target.x},${d.target.y-NODE_H/2}`)
+    .attr('fill','none').attr('stroke','#90a4ae').attr('stroke-width',1.2)
+    .attr('marker-end','url(#ast-arrow)');
 
+  // Rectangle nodes (no rounded corners, compact)
   const nodes = g.selectAll('.ast-node').data(root.descendants()).join('g')
     .attr('transform',d=>`translate(${d.x},${d.y})`)
     .on('mouseover',(e,d)=>{showASTNode(d);showTip(e,d);}).on('mouseout',hideTip);
 
   nodes.append('rect')
-    .attr('width', d => Math.max(60, (d.data.name.length+(d.data.label||'').length)*7+24))
-    .attr('height', d => d.data.label ? 38 : 24)
-    .attr('x', d => -Math.max(60, (d.data.name.length+(d.data.label||'').length)*7+24)/2)
-    .attr('y', d => d.data.label ? -19 : -12)
-    .attr('fill', d=>nColor(d.data.name).bg).attr('stroke',d=>nColor(d.data.name).border)
-    .attr('stroke-width',1.5).attr('rx',5).attr('ry',5);
+    .attr('width',NODE_W).attr('height',NODE_H)
+    .attr('x',-NODE_W/2).attr('y',-NODE_H/2)
+    .attr('fill', d=>nColor(d.data.name).bg)
+    .attr('stroke',d=>nColor(d.data.name).border).attr('stroke-width',1.2);
 
-  nodes.append('text').attr('dy', d=>d.data.label?'-4':'4').attr('text-anchor','middle')
-    .attr('fill', d=>nColor(d.data.name).text).attr('font-weight','600').attr('font-size','11px').text(d=>d.data.name);
-  nodes.filter(d=>d.data.label).append('text').attr('dy','14').attr('text-anchor','middle')
-    .attr('fill','#555').attr('font-size','10px').text(d=>d.data.label);
-  nodes.filter(d=>d.data.extra).append('text').attr('dy', d=>d.data.label?'26':'16').attr('text-anchor','middle')
-    .attr('fill','#999').attr('font-size','9px').text(d=>d.data.extra);
+  nodes.append('text').attr('dy','5').attr('text-anchor','middle')
+    .attr('fill', d=>nColor(d.data.name).text).attr('font-weight','600')
+    .attr('font-size','10px').text(d=>d.data.name);
 }
 
 function showASTNode(d) {
@@ -1082,6 +1034,7 @@ function showTip(event,d) {
   document.body.appendChild(tip);
   tip.style.left = (event.pageX-tip.offsetWidth/2)+'px'; tip.style.top = (event.pageY-40)+'px';
 }
+function hideTip() { document.querySelectorAll('.d3-tip').forEach(t => t.remove()); }
 
 function zoomAST(f) { if(S.astZoom) d3.select('#ast-svg').transition().duration(300).call(S.astZoom.scaleBy,f); }
 function resetAST() { if(S.astZoom) d3.select('#ast-svg').transition().duration(300).call(S.astZoom.transform,d3.zoomIdentity); }
