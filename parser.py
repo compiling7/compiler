@@ -1,11 +1,7 @@
 """Rust 类语言语法分析器 - 递归下降分析"""
 
 from lexer import Lexer
-<<<<<<< HEAD
 from compiler_ast import *
-=======
-from ast import *
->>>>>>> 661b9812f96a549b4a6fa1c00d5cf185523dd921
 from token_types import *
 
 
@@ -476,7 +472,6 @@ class Parser:
             expr = self.parse_expression()
             args.append(expr)
         self._trace_exit("parse_argument_list", args)
-<<<<<<< HEAD
         return args
 
 
@@ -642,6 +637,3 @@ class ParserTracer:
                     return ev.token_pos
             return 0
         return 0
-=======
-        return args
->>>>>>> 661b9812f96a549b4a6fa1c00d5cf185523dd921
