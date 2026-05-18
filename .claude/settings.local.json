@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c \"\nfrom visualizer_gui import *\n# Verify DARK no longer exists\ntry:\n    from visualizer_gui import DARK\n    print(''FAIL: DARK is still importable'')\nexcept ImportError:\n    print(''OK: DARK removed'')\ntry:\n    from visualizer_gui import set_theme\n    print(''FAIL: set_theme is still importable'')\nexcept ImportError:\n    print(''OK: set_theme removed'')\ntry:\n    from visualizer_gui import _is_dark\n    print(''FAIL: _is_dark is still importable'')\nexcept ImportError:\n    print(''OK: _is_dark removed'')\n\")"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

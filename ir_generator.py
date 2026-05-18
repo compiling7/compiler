@@ -1,6 +1,10 @@
 """Three-address code (quadruple) IR generator from AST."""
 
+<<<<<<< HEAD
 from compiler_ast import *
+=======
+from ast import *
+>>>>>>> 661b9812f96a549b4a6fa1c00d5cf185523dd921
 
 
 class Quadruple:

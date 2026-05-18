@@ -26,9 +26,15 @@ class CompilerUI:
 
     def __init__(self, root):
         self.root = root
+<<<<<<< HEAD
         self.root.title("CompilerLab · 类Rust 编译器前端可视化")
         self.root.geometry("1440x860")
         self.root.minsize(1120, 680)
+=======
+        self.root.title("类Rust 编译器前端可视化系统")
+        self.root.geometry("1500x900")
+        self.root.minsize(1200, 700)
+>>>>>>> 661b9812f96a549b4a6fa1c00d5cf185523dd921
 
         self.current_ast = None
 
@@ -62,8 +68,13 @@ class CompilerUI:
 
         # Notebook tab style
         style.configure("Apple.TNotebook.Tab",
+<<<<<<< HEAD
                         font=(FONT_TEXT, 10, "bold"),
                         padding=[14, 7],
+=======
+                        font=(FONT_TEXT, 11),
+                        padding=[12, 5],
+>>>>>>> 661b9812f96a549b4a6fa1c00d5cf185523dd921
                         borderwidth=0,
                         focuscolor="none")
         style.layout("Apple.TNotebook.Tab",
@@ -87,6 +98,7 @@ class CompilerUI:
         th = LIGHT
         toolbar = tk.Frame(self.root, bg=th["bg_secondary"],
                            highlightbackground=th["border_light"],
+<<<<<<< HEAD
                            highlightthickness=1, bd=0)
         toolbar.pack(fill=tk.X)
 
@@ -103,37 +115,74 @@ class CompilerUI:
             inner, text="v1.0.4-beta", font=(FONT_TEXT, 9),
             fg=th["text_muted"], bg=th["bg_secondary"]
         ).pack(side=tk.LEFT, padx=(8, 18))
+=======
+                           highlightthickness=0, bd=0)
+        toolbar.pack(fill=tk.X, padx=0, pady=(0, 1))
+
+        inner = tk.Frame(toolbar, bg=th["bg_secondary"])
+        inner.pack(fill=tk.X, padx=SPACING["md"], pady=(SPACING["xs"], SPACING["xs"]))
+
+        # App title
+        tk.Label(
+            inner, text="  Rust 编译器前端",
+            font=(FONT_DISPLAY, 13, "bold"),
+            fg=th["text_primary"], bg=th["bg_secondary"]
+        ).pack(side=tk.LEFT, padx=(0, SPACING["lg"]))
+>>>>>>> 661b9812f96a549b4a6fa1c00d5cf185523dd921
 
         # Separator
         ttk.Separator(inner, orient=tk.VERTICAL).pack(
             side=tk.LEFT, fill=tk.Y, padx=SPACING["xs"], pady=2)
 
         # Toolbar buttons
+<<<<<<< HEAD
         self._toolbar_btn(inner, "Open", self._open_file).pack(
             side=tk.LEFT, padx=SPACING["xxs"])
         self._toolbar_btn(inner, "Run Lexer", self.do_lexer, True).pack(
             side=tk.LEFT, padx=SPACING["xxs"])
         self._toolbar_btn(inner, "Run Parser", self.do_parser, True).pack(
+=======
+        self._toolbar_btn(inner, "📂 打开文件", self._open_file).pack(
+            side=tk.LEFT, padx=SPACING["xxs"])
+        self._toolbar_btn(inner, "🔍 词法分析", self.do_lexer).pack(
+            side=tk.LEFT, padx=SPACING["xxs"])
+        self._toolbar_btn(inner, "🌳 语法分析", self.do_parser).pack(
+>>>>>>> 661b9812f96a549b4a6fa1c00d5cf185523dd921
             side=tk.LEFT, padx=SPACING["xxs"])
 
         ttk.Separator(inner, orient=tk.VERTICAL).pack(
             side=tk.LEFT, fill=tk.Y, padx=SPACING["sm"], pady=2)
 
+<<<<<<< HEAD
         self._toolbar_btn(inner, "Clear", self.clear_all).pack(
             side=tk.LEFT, padx=SPACING["xxs"])
         self._toolbar_btn(inner, "Save", self._export_all).pack(
+=======
+        self._toolbar_btn(inner, "🗑 清空", self.clear_all).pack(
+            side=tk.LEFT, padx=SPACING["xxs"])
+        self._toolbar_btn(inner, "💾 导出", self._export_all).pack(
+>>>>>>> 661b9812f96a549b4a6fa1c00d5cf185523dd921
             side=tk.LEFT, padx=SPACING["xxs"])
 
         ttk.Separator(inner, orient=tk.VERTICAL).pack(
             side=tk.LEFT, fill=tk.Y, padx=SPACING["sm"], pady=2)
 
+<<<<<<< HEAD
     def _toolbar_btn(self, parent, text, cmd, primary=False):
+=======
+    def _toolbar_btn(self, parent, text, cmd):
+>>>>>>> 661b9812f96a549b4a6fa1c00d5cf185523dd921
         """Lightweight rounded toolbar button"""
         th = LIGHT
         return tk.Button(
             parent, text=text, command=cmd,
+<<<<<<< HEAD
             font=(FONT_TEXT, 10, "bold" if primary else "normal"),
             fg=th["accent_blue"] if primary else th["text_secondary"], bg=th["bg_selected"] if primary else th["bg_secondary"],
+=======
+            font=(FONT_TEXT, 11),
+            fg=th["text_primary"], bg=th["bg_tertiary"],
+>>>>>>> 661b9812f96a549b4a6fa1c00d5cf185523dd921
             activeforeground=th["accent_blue"], activebackground=th["bg_hover"],
             relief=tk.FLAT, bd=0,
             padx=10, pady=4,
@@ -151,8 +200,13 @@ class CompilerUI:
                                    bg=th["bg_primary"],
                                    sashwidth=4, sashrelief=tk.FLAT,
                                    sashpad=0)
+<<<<<<< HEAD
         self.pane.pack(fill=tk.BOTH, expand=True, padx=14,
                        pady=(0, 10))
+=======
+        self.pane.pack(fill=tk.BOTH, expand=True, padx=SPACING["sm"],
+                       pady=(0, SPACING["xs"]))
+>>>>>>> 661b9812f96a549b4a6fa1c00d5cf185523dd921
 
         # ── Left Panel: Source Code Editor ──
         left_card = tk.Frame(self.pane, bg=th["card_bg"],
@@ -164,8 +218,13 @@ class CompilerUI:
         header = tk.Frame(left_card, bg=th["card_bg"])
         header.pack(fill=tk.X, padx=SPACING["md"], pady=(SPACING["md"], 0))
         tk.Label(
+<<<<<<< HEAD
             header, text="SOURCE", font=(FONT_TEXT, 8, "bold"),
             fg=th["text_muted"], bg=th["card_bg"], anchor=tk.W
+=======
+            header, text="源代码", font=(FONT_TEXT, 12, "bold"),
+            fg=th["text_primary"], bg=th["card_bg"], anchor=tk.W
+>>>>>>> 661b9812f96a549b4a6fa1c00d5cf185523dd921
         ).pack(side=tk.LEFT)
 
         # Editor
@@ -173,7 +232,11 @@ class CompilerUI:
             left_card, width=44, height=30,
             font=(FONT_CODE, 12), wrap=tk.NONE,
             bg=th["code_bg"], fg=th["text_primary"],
+<<<<<<< HEAD
             insertbackground=th["accent_blue"],
+=======
+            insertbackground=th["text_primary"],
+>>>>>>> 661b9812f96a549b4a6fa1c00d5cf185523dd921
             relief=tk.FLAT, bd=0,
             highlightthickness=0,
             padx=SPACING["sm"], pady=SPACING["sm"]
@@ -192,15 +255,24 @@ class CompilerUI:
 
         # Tab 1: Token Viewer
         self.token_viewer = TokenViewer(self.notebook, on_token_select=self._on_token_selected)
+<<<<<<< HEAD
         self.notebook.add(self.token_viewer, text="  Lexer  ")
 
         # Tab 2: Syntax Tree
         self.syntax_viewer = SyntaxTreeViewer(self.notebook, on_node_select=self._on_node_selected)
         self.notebook.add(self.syntax_viewer, text="  Grammar  ")
+=======
+        self.notebook.add(self.token_viewer, text="  Token 查看  ")
+
+        # Tab 2: Syntax Tree
+        self.syntax_viewer = SyntaxTreeViewer(self.notebook, on_node_select=self._on_node_selected)
+        self.notebook.add(self.syntax_viewer, text="  语法树  ")
+>>>>>>> 661b9812f96a549b4a6fa1c00d5cf185523dd921
 
         # Tab 3: Parser Process Viewer
         self.parser_process_viewer = ParserProcessViewer(self.notebook,
                                                          on_node_select=self._on_node_selected)
+<<<<<<< HEAD
         self.notebook.add(self.parser_process_viewer, text="  Parser  ")
 
         # Tab 4: AST Graph
@@ -210,6 +282,17 @@ class CompilerUI:
         # Tab 5: Error Viewer
         self.error_display = ErrorDisplay(self.notebook)
         self.notebook.add(self.error_display, text="  Issues  ")
+=======
+        self.notebook.add(self.parser_process_viewer, text="  语法分析过程  ")
+
+        # Tab 4: AST Graph
+        self.ast_viewer = ASTGraphViewer(self.notebook, on_node_select=self._on_node_selected)
+        self.notebook.add(self.ast_viewer, text="  AST 视图  ")
+
+        # Tab 5: Error Viewer
+        self.error_display = ErrorDisplay(self.notebook)
+        self.notebook.add(self.error_display, text="  消息  ")
+>>>>>>> 661b9812f96a549b4a6fa1c00d5cf185523dd921
 
         # ── Right Panel: Info Panel ──
         right_outer = tk.Frame(self.pane, bg=th["card_bg"],
@@ -225,7 +308,11 @@ class CompilerUI:
     # ─────────────────────────────────────────
     def _build_status_bar(self):
         th = LIGHT
+<<<<<<< HEAD
         status_frame = tk.Frame(self.root, bg=th["status_blue"],
+=======
+        status_frame = tk.Frame(self.root, bg=th["bg_secondary"],
+>>>>>>> 661b9812f96a549b4a6fa1c00d5cf185523dd921
                                 highlightbackground=th["border_light"],
                                 highlightthickness=1, bd=0)
         status_frame.pack(fill=tk.X)

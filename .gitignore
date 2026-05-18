@@ -1,7 +1,11 @@
 __pycache__/
 .history/
+<<<<<<< HEAD
 .claude
 dist/
 build/
 *.exe
 *.pkg
+=======
+.claude
+>>>>>>> 661b9812f96a549b4a6fa1c00d5cf185523dd921

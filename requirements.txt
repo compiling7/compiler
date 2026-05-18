@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # CompilerLab - Rust 编译器可视化工具
 #
 # 方案: PyWebView + Flask + HTML/TailwindCSS
@@ -18,3 +19,9 @@ pywebview>=5.0.0
 # AST 可视化 (通过 D3.js CDN 加载)
 # 前端依赖: TailwindCSS, Material Symbols, Inter/JetBrains Mono fonts, D3.js
 # 以上均为 CDN 加载，不需要 Python 包
+=======
+# 类Rust词法和语法分析工具依赖
+
+# 仅使用Python标准库，无需额外安装
+# tkinter - GUI界面 (Python内置)
+>>>>>>> 661b9812f96a549b4a6fa1c00d5cf185523dd921
