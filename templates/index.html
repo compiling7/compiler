@@ -611,6 +611,19 @@ function openFile() {
   }; inp.click();
 }
 
+function _astToText(node, depth) {
+  if (!node) return '';
+  const indent = '  '.repeat(depth);
+  let line = indent + node.name;
+  if (node.label) line += ' [' + node.label + ']';
+  if (node.extra) line += ' (' + node.extra + ')';
+  let text = line + '\n';
+  if (node.children) {
+    for (const c of node.children) text += _astToText(c, depth + 1);
+  }
+  return text;
+}
+
 function saveOutput() {
   const lines = [];
   lines.push('=== CompilerLab Output ===');
@@ -625,26 +638,34 @@ function saveOutput() {
     });
     lines.push('');
   }
-  if (S.quads.length) {
-    lines.push('--- IR Quadruples ---');
-    S.quads.forEach((q,i) => {
-      lines.push(`${String(i).padStart(4)}  (${q.op}, ${q.arg1||'_'}, ${q.arg2||'_'}, ${q.result||'_'})`);
-    });
+  if (S.trace && S.trace.length) {
+    lines.push('--- Syntax Analysis (Trace) ---');
+    S.trace.forEach(m => lines.push('  ' + m));
     lines.push('');
   }
-  if (S.assembly) {
-    lines.push('--- Assembly ---');
-    lines.push(S.assembly);
+  if (S.ast) {
+    lines.push('--- AST ---');
+    lines.push(_astToText(S.ast, 0));
   }
   if (S.errors.length) {
     lines.push('--- Errors ---');
     S.errors.forEach(e => lines.push('  ' + e.message));
   }
-  const blob = new Blob([lines.join('\n')], {type:'text/plain'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href=url; a.download='compiler_output.txt';
-  a.click(); URL.revokeObjectURL(url);
-  setStatus('Saved','check_circle');
+  const content = lines.join('\n');
+  // PyWebView native mode: use JS bridge to trigger native OS save dialog
+  if (window.pywebview && window.pywebview.api) {
+    window.pywebview.api.save_file(content).then(success => {
+      setStatus(success ? 'Saved' : 'Save cancelled', success ? 'check_circle' : 'warning');
+    });
+  } else {
+    // Browser mode: use standard blob download
+    const blob = new Blob([content], {type: 'text/plain'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'compiler_output.txt';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setStatus('Saved','check_circle');
+  }
 }
 
 // ═══════════════════════════════════════════
