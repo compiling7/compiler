@@ -113,6 +113,51 @@ tailwind.config = {
   .dsec { border-bottom: 1px solid #e2e2e7; padding: 12px 14px; }
   .dsec:last-child { border-bottom: none; }
   .dsec-title { font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #717786; margin-bottom: 8px; }
+  /* Semantic view */
+  .sem-chip { display:inline-flex; align-items:center; gap:4px; padding:1px 7px; border-radius:9999px; font-size:10px; font-weight:700; letter-spacing:0.04em; }
+  .sem-kind-fn   { background:#e3f2fd; color:#0d47a1; }
+  .sem-kind-var  { background:#e8f5e9; color:#1b5e20; }
+  .sem-kind-param{ background:#fff3e0; color:#e65100; }
+  .sem-mut-yes   { background:#d8e2ff; color:#004493; }
+  .sem-mut-no    { background:#f5f5f5; color:#717786; }
+  .sem-init-ok   { color:#0f9d58; }
+  .sem-init-no   { color:#ba1a1a; }
+  .sem-row { display:grid; grid-template-columns: 1fr 64px 80px 60px; gap:8px; align-items:center; padding:6px 14px; border-bottom:1px solid #e2e2e7; font-family:'JetBrains Mono',monospace; font-size:12px; }
+  .sem-row:hover { background:#f3f3f8; }
+  .sem-row .nm { font-weight:700; color:#0058bc; }
+  .sem-empty { color:#717786; padding:24px; text-align:center; font-size:13px; }
+  /* IR view */
+  .ir-row { display:grid; grid-template-columns: 28px 64px minmax(0,1fr) minmax(0,1fr) minmax(0,1fr); gap:4px; align-items:center; padding:3px 8px; border-bottom:1px solid #eef0f4; font-family:'JetBrains Mono',monospace; font-size:11px; line-height:1.5; }
+  .ir-row:hover { background:#f3f3f8; }
+  .ir-row .idx { color:#717786; text-align:right; font-size:10px; }
+  .ir-op { display:inline-block; padding:1px 5px; border-radius:3px; font-size:9.5px; font-weight:700; letter-spacing:0.04em; text-align:center; }
+  .ir-op-arith { background:#e8f5e9; color:#1b5e20; }
+  .ir-op-cmp   { background:#fff3e0; color:#e65100; }
+  .ir-op-move  { background:#e3f2fd; color:#0d47a1; }
+  .ir-op-cf    { background:#f3e5f5; color:#6a1b9a; }
+  .ir-op-fn    { background:#e0f7fa; color:#006064; }
+  .ir-op-array { background:#fce4ec; color:#880e4f; }
+  .ir-op-meta  { background:#f5f5f5; color:#414755; }
+  .ir-tup { color:#1a1c1f; }
+  .ir-tup .arg1 { color:#0058bc; }
+  .ir-tup .arg2 { color:#0058bc; }
+  .ir-tup .res  { color:#0f9d58; font-weight:700; }
+  .ir-tup .und  { color:#9e9e9e; }
+  .ir-jmp { background:#ede7f6; }
+  .ir-funcheader { background:#e0f7fa; font-weight:700; }
+  .ir-stat-pill { display:inline-flex; align-items:baseline; gap:5px; padding:4px 9px; background:#f3f3f8; border-radius:6px; }
+  .ir-stat-pill b { color:#0058bc; font-size:14px; }
+  .ir-stat-pill span { color:#717786; font-size:9.5px; text-transform:uppercase; letter-spacing:0.05em; font-weight:700; }
+  /* IR detail panel — tighter than the default .dsec */
+  #ir-detail .dsec { padding: 10px 12px; }
+  #ir-detail .dsec-title { margin-bottom: 5px; }
+
+  /* Issues view (semantic errors) */
+  .iss-row { display:grid; grid-template-columns: 90px 1fr 80px; gap:8px; align-items:start; padding:8px 12px; border-bottom:1px solid #e2e2e7; cursor:pointer; }
+  .iss-row:hover { background:#f3f3f8; }
+  .iss-code { font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:700; padding:2px 6px; border-radius:4px; background:#ffdad6; color:#93000a; text-align:center; }
+  .iss-msg  { font-size:13px; color:#1a1c1f; }
+  .iss-pos  { font-family:'JetBrains Mono',monospace; font-size:11px; color:#717786; text-align:right; }
 </style>
 </head>
 <body class="bg-surface font-body-base text-on-surface overflow-hidden flex flex-col h-screen">
@@ -445,6 +490,94 @@ type        = "i32" | "[" type ";" NUM "]"</div>
       </div>
     </div>
 
+    <!-- ===== VIEW: Semantic ===== -->
+    <div id="view-semantic" class="view-panel flex-1 flex overflow-hidden">
+      <div class="flex-1 flex flex-col overflow-hidden">
+        <div class="h-7 bg-surface-container px-3 flex items-center border-b border-outline-variant flex-shrink-0">
+          <span class="font-label-caps text-on-surface-variant">SYMBOL TABLE &amp; SEMANTIC CHECKS</span>
+          <span id="sem-summary" class="ml-auto font-code-sm text-outline text-[12px]"></span>
+        </div>
+        <!-- Summary row -->
+        <div class="px-3 py-2 border-b border-outline-variant flex flex-wrap gap-2" id="sem-stat-row"></div>
+        <div class="flex-1 overflow-auto" id="sem-list">
+          <div class="sem-empty">执行 Run All 后查看符号表与作用域信息</div>
+        </div>
+      </div>
+      <div class="w-detail_w flex-shrink-0 border-l border-outline-variant flex flex-col overflow-hidden bg-surface-container-low">
+        <div class="h-7 bg-surface-container px-3 flex items-center border-b border-outline-variant flex-shrink-0">
+          <span class="font-label-caps text-on-surface-variant">SEMANTIC DIAGNOSTICS</span>
+        </div>
+        <div class="flex-1 overflow-auto" id="sem-detail">
+          <div class="dsec">
+            <div class="dsec-title">Result</div>
+            <div id="sem-result-info" class="font-body-sm text-body-sm">运行后查看</div>
+          </div>
+          <div class="dsec">
+            <div class="dsec-title">Checks Performed</div>
+            <ul class="font-body-sm text-[12px] text-on-surface-variant space-y-1 list-disc pl-4">
+              <li>作用域与重影（重影 = let 重复声明）</li>
+              <li>变量/函数未声明</li>
+              <li>不可变变量二次赋值</li>
+              <li>二元运算 / 比较运算类型一致</li>
+              <li>赋值 / 初始化类型与变量声明一致</li>
+              <li>函数实参数与形参数量 / 类型一致</li>
+              <li>return 表达式类型与函数返回类型一致</li>
+              <li>if / while 条件必须为 i32</li>
+              <li>void 函数不能作为右值使用</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== VIEW: IR (Intermediate Representation / Three-Address Code) ===== -->
+    <div id="view-ir" class="view-panel flex-1 flex overflow-hidden">
+      <div class="flex-1 flex flex-col overflow-hidden">
+        <div class="h-7 bg-surface-container px-3 flex items-center border-b border-outline-variant flex-shrink-0">
+          <span class="font-label-caps text-on-surface-variant">INTERMEDIATE CODE · QUADRUPLE (op, arg1, arg2, result)</span>
+          <span id="ir-count-label" class="ml-auto font-code-sm text-outline text-[12px]"></span>
+        </div>
+        <!-- Stat pills -->
+        <div class="px-3 py-1.5 border-b border-outline-variant flex flex-wrap gap-2" id="ir-stat-row"></div>
+        <!-- IR table -->
+        <div class="flex-1 overflow-auto">
+          <div class="ir-row" style="background:#e8e8ed; font-weight:700; color:#414755; font-size:10px; text-transform:uppercase; letter-spacing:0.05em;">
+            <div class="idx">#</div>
+            <div>OP</div>
+            <div>arg1</div>
+            <div>arg2</div>
+            <div>result</div>
+          </div>
+          <div id="ir-tbody"></div>
+          <div id="ir-placeholder" class="sem-empty">执行 Run All 后查看四元式</div>
+        </div>
+      </div>
+      <div class="w-detail_w flex-shrink-0 border-l border-outline-variant flex flex-col overflow-hidden bg-surface-container-low">
+        <div class="h-7 bg-surface-container px-3 flex items-center border-b border-outline-variant flex-shrink-0">
+          <span class="font-label-caps text-on-surface-variant">IR REFERENCE</span>
+        </div>
+        <div class="flex-1 overflow-auto" id="ir-detail">
+          <div class="dsec">
+            <div class="dsec-title">Operation Categories</div>
+            <div class="font-body-sm text-[12px] space-y-1.5" id="ir-op-legend"></div>
+          </div>
+          <div class="dsec">
+            <div class="dsec-title">Notation</div>
+            <ul class="font-body-sm text-[12px] text-on-surface-variant space-y-1 list-disc pl-4">
+              <li><span class="ir-tup"><span class="arg1">t0</span>, <span class="arg2">t1</span></span> 表示编译器生成的临时变量</li>
+              <li><span class="ir-tup"><span class="res">x</span></span> 表示程序中声明的具名变量</li>
+              <li><span class="ir-tup"><span class="und">_</span></span> 表示空（占位）</li>
+              <li><span class="ir-tup"><span class="arg1">L0</span></span> 表示跳转标签</li>
+            </ul>
+          </div>
+          <div class="dsec">
+            <div class="dsec-title">Selected Quad</div>
+            <div id="ir-quad-info" class="font-body-sm text-body-sm">点击四元式查看详情</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </main>
 
   <!-- ─── RIGHT SIDEBAR ─── -->
@@ -473,6 +606,13 @@ type        = "i32" | "[" type ";" NUM "]"</div>
       <button onclick="switchView('issues')" data-view="issues" class="nav-btn">
         <span class="material-symbols-outlined nav-icon">bug_report</span> Issues
         <span class="nav-badge hidden" id="badge-issues">0</span>
+      </button>
+      <button onclick="switchView('semantic')" data-view="semantic" class="nav-btn">
+        <span class="material-symbols-outlined nav-icon">rule</span> Semantic
+        <span class="nav-badge hidden" id="badge-semantic">0</span>
+      </button>
+      <button onclick="switchView('ir')" data-view="ir" class="nav-btn">
+        <span class="material-symbols-outlined nav-icon">memory</span> IR
       </button>
     </nav>
     <div class="mt-auto border-t border-outline-variant pt-3 px-1.5">
@@ -510,7 +650,7 @@ type        = "i32" | "[" type ";" NUM "]"</div>
 // ═══════════════════════════════════════════
 const S = {
   source: '', tokens: [], ast: null, trace: [], trace_events: [], quads: [], assembly: '',
-  symbolTable: {}, errors: [], stats: {}, currentView: 'editor',
+  symbolTable: {}, errors: [], semantic_errors: [], stats: {}, currentView: 'editor',
   tokenHover: null, selectedTokenIdx: -1,
   parsed: false,
   // LR state
@@ -563,6 +703,8 @@ function switchView(view) {
   if (view === 'lr' && S.trace.length > 0) renderLR();
   if (view === 'ast' && S.ast) renderAST();
   if (view === 'issues') renderIssues();
+  if (view === 'semantic') renderSemantic();
+  if (view === 'ir') renderIR();
 }
 
 // ═══════════════════════════════════════════
@@ -688,7 +830,9 @@ async function runPipeline() {
     S.tokens = d.tokens||[]; S.ast = d.ast; S.trace = d.trace||[]; S.trace_events = d.trace_events||[];
     S.quads = d.quads||[]; S.assembly = d.assembly||'';
     S.symbolTable = d.symbol_table||{};
-    S.errors = (d.semantic_errors||[]).map(e=>({message:'Semantic: '+e.message}));
+    S.semantic_errors = d.semantic_errors||[];
+    // Build S.errors (issues view) from lex/parse/semantic
+    S.errors = S.semantic_errors.map(e => ({code:e.code, message:e.message, line:e.line, column:e.column, node:e.node}));
     S.stats = d.stats||{}; S.parsed = true;
     updateAll(); updateBadges(); updateEditorStats();
     setStatus('Pipeline complete','check_circle');
@@ -1062,7 +1206,221 @@ function showErrorDetail(idx) {
   document.getElementById('issues-error-info').innerHTML = `
     <div class="flex justify-between mb-1"><span class="text-outline">#</span><span>${idx}</span></div>
     <div class="flex justify-between mb-1"><span class="text-outline">Severity</span><span class="text-error">${e.message.includes('rror')?'Error':'Warning'}</span></div>
+    ${e.code ? `<div class="flex justify-between mb-1"><span class="text-outline">Code</span><span class="font-mono text-[11px]">${escHtml(e.code)}</span></div>` : ''}
+    ${(e.line||e.column) ? `<div class="flex justify-between mb-1"><span class="text-outline">Position</span><span class="font-mono text-[11px]">${e.line||'?'}:${e.column||'?'}</span></div>` : ''}
     <div class="mt-2 p-2 bg-error-container/30 rounded font-code-sm text-[13px]">${escHtml(e.message)}</div>`;
+}
+
+// ═══════════════════════════════════════════
+// Render: Semantic (Symbol Table + Diagnostics)
+// ═══════════════════════════════════════════
+function _semKindClass(kind) {
+  if (kind === 'fn') return 'sem-kind-fn';
+  if (kind === 'param') return 'sem-kind-param';
+  return 'sem-kind-var';
+}
+function _semKindLabel(kind) {
+  if (kind === 'fn') return '函数';
+  if (kind === 'param') return '形参';
+  return '变量';
+}
+function renderSemantic() {
+  const list = document.getElementById('sem-list');
+  const statRow = document.getElementById('sem-stat-row');
+  const summary = document.getElementById('sem-summary');
+  const result = document.getElementById('sem-result-info');
+  const syms = S.symbolTable ? Object.entries(S.symbolTable) : [];
+  const errs = S.semantic_errors || [];
+
+  // Stat pills
+  const fns = syms.filter(([,v]) => v.kind === 'fn');
+  const vars = syms.filter(([,v]) => v.kind === 'var' || v.kind === 'param');
+  statRow.innerHTML = [
+    `<div class="ir-stat-pill"><b>${syms.length}</b><span>符号</span></div>`,
+    `<div class="ir-stat-pill"><b>${fns.length}</b><span>函数</span></div>`,
+    `<div class="ir-stat-pill"><b>${vars.length}</b><span>变量 / 形参</span></div>`,
+    `<div class="ir-stat-pill" style="${errs.length?'background:#ffdad6;color:#93000a':'background:#e6f4ea;color:#0f9d58'}"><b>${errs.length}</b><span>静态错误</span></div>`,
+  ].join('');
+  summary.textContent = `${syms.length} symbols · ${errs.length} errors`;
+
+  // Symbol table
+  if (syms.length === 0 && errs.length === 0) {
+    list.innerHTML = '<div class="sem-empty">执行 Run All 后查看符号表与作用域信息</div>';
+  } else {
+    const header = `<div class="sem-row" style="background:#e8e8ed; font-weight:700; color:#414755; font-size:11px; text-transform:uppercase; letter-spacing:0.05em;">
+      <div>Name</div><div>Kind</div><div>Type</div><div>Mutable</div></div>`;
+    const rows = syms.map(([name, info]) => {
+      const kind = info.kind || 'var';
+      const isFn = kind === 'fn';
+      const params = isFn && info.params
+        ? `<div class="text-outline text-[11px] mt-1">(${info.params.map(p => `${p.mutable?'mut ':''}${p.name}:${p.type}`).join(', ')})</div>`
+        : '';
+      return `<div class="sem-row">
+        <div>
+          <span class="nm">${escHtml(name)}</span>${params}
+        </div>
+        <div><span class="sem-chip ${_semKindClass(kind)}">${_semKindLabel(kind)}</span></div>
+        <div>${escHtml(info.type || '—')}</div>
+        <div>${info.mutable ? '<span class="sem-chip sem-mut-yes">mut</span>' : '<span class="sem-chip sem-mut-no">—</span>'}</div>
+      </div>`;
+    }).join('');
+    const errList = errs.length ? `<div class="dsec-title" style="padding:14px 14px 6px;">语义错误 (${errs.length})</div>` +
+      errs.map((e,i) => `<div class="iss-row" onclick="showErrorDetail(${i})">
+        <div class="iss-code">${escHtml(e.code||'E_?')}</div>
+        <div class="iss-msg">${escHtml(e.message)}</div>
+        <div class="iss-pos">${e.line||'?'}:${e.column||'?'}</div>
+      </div>`).join('') : '';
+    list.innerHTML = header + rows + errList;
+  }
+
+  // Result panel
+  if (errs.length === 0 && syms.length === 0) {
+    result.textContent = '运行后查看';
+  } else if (errs.length === 0) {
+    result.innerHTML = `<div class="text-green-700 font-semibold flex items-center gap-1"><span class="material-symbols-outlined text-[16px]">check_circle</span> 静态检查通过</div>
+      <div class="text-outline text-[12px] mt-1">符号表已建立，类型一致，无静态错误。</div>`;
+  } else {
+    result.innerHTML = `<div class="text-error font-semibold flex items-center gap-1"><span class="material-symbols-outlined text-[16px]">error</span> ${errs.length} 个静态错误</div>
+      <div class="text-outline text-[12px] mt-1">请修复后重新运行。</div>`;
+  }
+}
+
+// ═══════════════════════════════════════════
+// Render: IR (Three-Address Code Quadruples)
+// ═══════════════════════════════════════════
+const IR_OP_CATEGORY = (op) => {
+  if (['+','-','*','/','neg'].includes(op)) return 'arith';
+  if (['<','<=','>','>=','==','!='].includes(op)) return 'cmp';
+  if (['=','assign','alloc'].includes(op)) return 'move';
+  if (['if_false','goto','label'].includes(op)) return 'cf';
+  if (['func','endfunc','param','arg','call','return'].includes(op)) return 'fn';
+  if (['array_get','array_set','array_lit'].includes(op)) return 'array';
+  return 'meta';
+};
+const IR_OP_CATEGORY_CSS = {
+  arith: 'ir-op-arith', cmp: 'ir-op-cmp', move: 'ir-op-move',
+  cf: 'ir-op-cf', fn: 'ir-op-fn', array: 'ir-op-array', meta: 'ir-op-meta',
+};
+const IR_OP_CATEGORY_NAME = {
+  arith: '算术 / 一元', cmp: '比较', move: '赋值 / 常量',
+  cf: '控制流', fn: '函数', array: '数组', meta: '其它',
+};
+const IR_OP_EXPLAIN = {
+  '+':'加法', '-':'减法', '*':'乘法', '/':'除法',
+  '<':'小于', '<=':'不大于', '>':'大于', '>=':'不小于', '==':'等于', '!=':'不等于',
+  '=':'常量赋值', 'assign':'变量赋值', 'alloc':'分配变量槽位',
+  'if_false':'条件为假则跳转', 'goto':'无条件跳转', 'label':'标签',
+  'func':'函数入口', 'endfunc':'函数结束', 'param':'形参声明',
+  'arg':'实参压栈', 'call':'函数调用', 'return':'函数返回',
+  'array_get':'数组读', 'array_set':'数组写', 'array_lit':'数组字面量',
+  'neg':'一元负号',
+};
+function _fmtCell(v) {
+  if (v === null || v === undefined || v === '') return '<span class="und">_</span>';
+  // Labels and function names start with L / func
+  if (typeof v === 'string' && (v.startsWith('L') || /^[A-Za-z_]\w*$/.test(v)) === false && !/^\d+$/.test(v) && !/^\[.+\;\d+\]$/.test(v)) {
+    return `<span class="res">${escHtml(v)}</span>`;
+  }
+  // Highlights
+  if (typeof v === 'string' && /^\d+$/.test(v)) return `<span class="arg1">${escHtml(v)}</span>`;
+  if (typeof v === 'string' && v.startsWith('L')) return `<span class="arg2">${escHtml(v)}</span>`;
+  return `<span class="res">${escHtml(v)}</span>`;
+}
+function _fmtCell(v) {
+  // Render a single quad field — never return raw text; return HTML.
+  if (v === null || v === undefined || v === '') return '<span class="und">_</span>';
+  if (typeof v !== 'string') v = String(v);
+  if (/^\d+$/.test(v))        return `<span class="arg1">${escHtml(v)}</span>`;
+  if (v.startsWith('L'))      return `<span class="arg2">${escHtml(v)}</span>`;
+  return `<span class="res">${escHtml(v)}</span>`;
+}
+function renderIR() {
+  const tbody = document.getElementById('ir-tbody');
+  const statRow = document.getElementById('ir-stat-row');
+  const label = document.getElementById('ir-count-label');
+  const placeholder = document.getElementById('ir-placeholder');
+  const legend = document.getElementById('ir-op-legend');
+  const quads = S.quads || [];
+
+  // Stat pills
+  const counts = {arith:0, cmp:0, move:0, cf:0, fn:0, array:0, meta:0};
+  for (const q of quads) counts[IR_OP_CATEGORY(q.op)]++;
+  statRow.innerHTML = [
+    `<div class="ir-stat-pill"><b>${quads.length}</b><span>四元式</span></div>`,
+    `<div class="ir-stat-pill"><b>${counts.fn}</b><span>函数相关</span></div>`,
+    `<div class="ir-stat-pill"><b>${counts.arith}</b><span>算术</span></div>`,
+    `<div class="ir-stat-pill"><b>${counts.cmp}</b><span>比较</span></div>`,
+    `<div class="ir-stat-pill"><b>${counts.cf}</b><span>控制流</span></div>`,
+    `<div class="ir-stat-pill"><b>${counts.move}</b><span>赋值</span></div>`,
+  ].join('');
+  label.textContent = quads.length ? `${quads.length} quadruples` : '';
+
+  // Legend
+  legend.innerHTML = Object.keys(IR_OP_CATEGORY_NAME).map(k =>
+    `<div class="flex items-center gap-2"><span class="ir-op ${IR_OP_CATEGORY_CSS[k]}">${k}</span><span>${IR_OP_CATEGORY_NAME[k]}</span></div>`
+  ).join('');
+
+  if (quads.length === 0) {
+    tbody.innerHTML = '';
+    placeholder.style.display = 'block';
+    return;
+  }
+  placeholder.style.display = 'none';
+
+  tbody.innerHTML = quads.map((q,i) => {
+    const cat = IR_OP_CATEGORY(q.op);
+    let extraCls = '';
+    if (cat === 'cf' && (q.op === 'if_false' || q.op === 'goto' || q.op === 'label')) extraCls = 'ir-jmp';
+    if (cat === 'fn' && (q.op === 'func' || q.op === 'endfunc')) extraCls = 'ir-funcheader';
+    return `<div class="ir-row ${extraCls}" onclick="selectQuad(${i})" style="cursor:pointer">
+      <div class="idx">${i}</div>
+      <div><span class="ir-op ${IR_OP_CATEGORY_CSS[cat]}">${escHtml(q.op)}</span></div>
+      <div>${_fmtCell(q.arg1)}</div>
+      <div>${_fmtCell(q.arg2)}</div>
+      <div>${_fmtCell(q.result)}</div>
+    </div>`;
+  }).join('');
+}
+
+function selectQuad(idx) {
+  const q = S.quads[idx];
+  if (!q) return;
+  const explain = IR_OP_EXPLAIN[q.op] || ('操作 ' + q.op);
+  const cat = IR_OP_CATEGORY(q.op);
+  document.getElementById('ir-quad-info').innerHTML = `
+    <div class="flex justify-between mb-1"><span class="text-outline">Index</span><span class="font-mono">#${idx}</span></div>
+    <div class="flex justify-between mb-1"><span class="text-outline">Category</span><span class="ir-op ${IR_OP_CATEGORY_CSS[cat]}">${cat}</span></div>
+    <div class="flex justify-between mb-1"><span class="text-outline">Op</span><span class="font-mono font-bold">${escHtml(q.op)} — ${explain}</span></div>
+    <div class="flex justify-between mb-1"><span class="text-outline">arg1</span><span class="font-mono">${q.arg1===null?'_':escHtml(String(q.arg1))}</span></div>
+    <div class="flex justify-between mb-1"><span class="text-outline">arg2</span><span class="font-mono">${q.arg2===null?'_':escHtml(String(q.arg2))}</span></div>
+    <div class="flex justify-between mb-1"><span class="text-outline">result</span><span class="font-mono">${q.result===null?'_':escHtml(String(q.result))}</span></div>
+    <div class="mt-2 p-2 bg-surface-container rounded font-code-sm text-[12px]">${explainQuad(q)}</div>`;
+}
+function explainQuad(q) {
+  const a1 = q.arg1===null?'_':q.arg1;
+  const a2 = q.arg2===null?'_':q.arg2;
+  const r  = q.result===null?'_':q.result;
+  switch (q.op) {
+    case '=': return `将常量 ${a1} 装入临时变量 ${r}`;
+    case 'assign': return `将 ${a1} 的值赋给 ${r}`;
+    case 'alloc': return `为变量 ${a1} 分配类型为 ${a2} 的栈槽`;
+    case '+': case '-': case '*': case '/': return `tmp = ${a1} ${q.op} ${a2} → ${r}`;
+    case '<': case '<=': case '>': case '>=': case '==': case '!=': return `tmp = (${a1} ${q.op} ${a2}) → ${r}（0/1）`;
+    case 'neg': return `tmp = -${a1} → ${r}`;
+    case 'if_false': return `若 ${a1} 为假则跳转到标签 ${r}`;
+    case 'goto': return `无条件跳转到标签 ${r}`;
+    case 'label': return `标签 ${r}:`;
+    case 'func': return `函数 ${a1} 开始`;
+    case 'endfunc': return `函数 ${a1} 结束`;
+    case 'param': return `形参 ${a1}: ${a2}`;
+    case 'arg': return `实参 ${a1} 入栈`;
+    case 'call': return `调用 ${a1}（${a2} 个参数）→ ${r}`;
+    case 'return': return `从当前函数返回 ${a1 === '_' ? '' : a1}`;
+    case 'array_get': return `tmp = ${a1}[${a2}] → ${r}`;
+    case 'array_set': return `${a1}[${a2}] = ${r}`;
+    case 'array_lit': return `数组字面量（${a2} 个元素）→ ${r}`;
+    default: return `${q.op} ${a1}, ${a2} → ${r}`;
+  }
 }
 
 // ═══════════════════════════════════════════
@@ -1073,6 +1431,8 @@ function updateAll() {
   if (S.ast) { renderParserTree(); renderAST(); }
   renderLR();
   renderIssues();
+  renderSemantic();
+  renderIR();
   updateEditorStats();
 }
 
@@ -1111,6 +1471,12 @@ function updateBadges() {
   document.getElementById('issues-count-badge').classList.toggle('hidden', S.errors.length === 0);
   const cb = document.getElementById('issues-count-badge').querySelector('span');
   if (cb) cb.textContent = S.errors.length;
+  const bs = document.getElementById('badge-semantic');
+  if (bs) {
+    const cnt = S.semantic_errors ? S.semantic_errors.length : 0;
+    if (cnt > 0) { bs.classList.remove('hidden'); bs.textContent = cnt; }
+    else { bs.classList.add('hidden'); }
+  }
 }
 
 // ═══════════════════════════════════════════
@@ -1125,7 +1491,7 @@ function setStatus(text, icon, spin) {
 function addError(msg) { S.errors.push({message:msg}); updateBadges(); }
 function clearAll() {
   S.tokens=[]; S.ast=null; S.trace=[]; S.trace_events=[]; S.quads=[]; S.assembly='';
-  S.symbolTable={}; S.errors=[]; S.stats={}; S.parsed=false;
+  S.symbolTable={}; S.errors=[]; S.semantic_errors=[]; S.stats={}; S.parsed=false;
   S.lrStep=0; S.lrPlaying=false; if(S.lrTimer){clearInterval(S.lrTimer);S.lrTimer=null;}
   document.getElementById('lexer-tbody').innerHTML='';
   document.getElementById('lexer-code').innerHTML='';
@@ -1136,6 +1502,14 @@ function clearAll() {
   document.getElementById('lr-trace').innerHTML='';
   document.getElementById('lr-callstack').innerHTML='<div class="text-outline text-[12px]">执行分析后查看</div>';
   document.getElementById('issues-list').innerHTML='<div class="text-outline font-body-sm">暂无错误</div>';
+  document.getElementById('sem-list').innerHTML='<div class="sem-empty">执行 Run All 后查看符号表与作用域信息</div>';
+  document.getElementById('sem-stat-row').innerHTML='';
+  document.getElementById('sem-summary').textContent='';
+  document.getElementById('sem-result-info').textContent='运行后查看';
+  document.getElementById('ir-tbody').innerHTML='';
+  document.getElementById('ir-stat-row').innerHTML='';
+  document.getElementById('ir-count-label').textContent='';
+  document.getElementById('ir-placeholder').style.display='block';
   document.getElementById('editor-stats').querySelectorAll('span:not(.text-error)').forEach(s=>s.textContent='—');
   document.getElementById('editor-sym-body').innerHTML='<tr><td colspan="4" class="text-outline py-4 text-center">暂无数据</td></tr>';
   document.getElementById('editor-output').innerHTML='Ready';

@@ -100,6 +100,16 @@ class AssemblyGenerator:
             self._emit("ret")
             self._emit("", indent=False)
 
+        elif op == "alloc":
+            # Variable slot reservation; no assembly emitted here, the
+            # front-end allocates the stack frame based on the parsed AST.
+            pass
+
+        elif op == "array_lit":
+            # Lowered to a series of stack stores; nothing to emit at the
+            # assembly layer for this placeholder.
+            pass
+
         elif op == "=":
             dst = self._op(q.result)
             src = self._op(q.arg1)

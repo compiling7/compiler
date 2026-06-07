@@ -1,108 +1,241 @@
-"""Three-address code (quadruple) IR generator from AST."""
+"""Three-address code (quadruple) IR generator from AST.
+
+The IR is a list of :class:`Quadruple` records ``(op, arg1, arg2, result)``.
+
+Supported operations
+--------------------
+
+Arithmetic: ``+  -  *  /``        — i32 binary ops
+Comparison: ``<  <=  >  >=  ==  !=`` — return i32 (0/1)
+Logical:    ``&&  ||  !``          — i32 logical ops
+Control:    ``if_false``, ``goto``, ``label``
+Functions:  ``func``, ``param``, ``arg``, ``call``, ``return``, ``endfunc``
+Data:       ``=`` (constant / copy), ``assign`` (variable assignment),
+            ``alloc`` (variable slot reservation), ``array_get``,
+            ``array_set``, ``array_lit``.
+"""
+
+from __future__ import annotations
+
+from typing import List, Optional
 
 from compiler_ast import *
 
 
+# --------------------------------------------------------------------------- #
+# Quadruple                                                                    #
+# --------------------------------------------------------------------------- #
+
 class Quadruple:
-    """IR instruction: (op, arg1, arg2, result)."""
-    def __init__(self, op, arg1=None, arg2=None, result=None):
+    """A single IR instruction: ``(op, arg1, arg2, result)``."""
+    __slots__ = ("op", "arg1", "arg2", "result")
+
+    def __init__(self, op: str, arg1=None, arg2=None, result=None):
         self.op = op
         self.arg1 = arg1
         self.arg2 = arg2
         self.result = result
 
     def __str__(self):
-        return f"({self.op}, {self.arg1 or '_'}, {self.arg2 or '_'}, {self.result or '_'})"
+        def fmt(x):
+            return "_" if x is None else str(x)
+        return f"({self.op}, {fmt(self.arg1)}, {fmt(self.arg2)}, {fmt(self.result)})"
 
+    def __repr__(self):
+        return self.__str__()
+
+    def to_dict(self):
+        return {
+            "op": self.op,
+            "arg1": self.arg1,
+            "arg2": self.arg2,
+            "result": self.result,
+        }
+
+
+# --------------------------------------------------------------------------- #
+# IR Generator                                                                 #
+# --------------------------------------------------------------------------- #
 
 class IRGenerator:
-    """Walks AST and emits three-address code quadruples."""
+    """Walks the AST and emits three-address code quadruples."""
 
     def __init__(self):
-        self.quads = []
-        self._t = 0
-        self._l = 0
+        self.quads: List[Quadruple] = []
+        self._temp_counter: int = 0
+        self._label_counter: int = 0
+        self._var_slots: dict[str, str] = {}   # AST-name -> canonical slot
+        # e.g. "x" -> "x", but for arrays "a" -> "a[8]" etc.
+        self._current_fn: Optional[str] = None
+        self._fn_table: dict[str, FunctionDeclNode] = {}
 
-    def generate(self, program):
-        for d in program.declarations:
-            self._fn(d)
+    # ---- public API ----
+
+    def generate(self, program: ProgramNode) -> List[Quadruple]:
+        self.quads = []
+        self._temp_counter = 0
+        self._label_counter = 0
+        self._var_slots = {}
+        self._fn_table = {}
+        if not isinstance(program, ProgramNode):
+            return self.quads
+        # Pre-collect function declarations so the expression visitor can
+        # tell whether a FuncCall refers to a void function.
+        for decl in program.declarations:
+            if isinstance(decl, FunctionDeclNode):
+                self._fn_table[decl.name] = decl
+        # Program entry / exit markers bracket every translation unit.
+        self._emit("program")
+        for decl in program.declarations:
+            if isinstance(decl, FunctionDeclNode):
+                self._fn(decl)
+        self._emit("endprogram")
         return self.quads
 
     # ---- helpers ----
 
-    def _temp(self):
-        self._t += 1
-        return f"t{self._t - 1}"
+    def _temp(self) -> str:
+        self._temp_counter += 1
+        return f"t{self._temp_counter - 1}"
 
-    def _label(self):
-        self._l += 1
-        return f"L{self._l - 1}"
+    def _label(self, hint: str = "L") -> str:
+        self._label_counter += 1
+        return f"{hint}{self._label_counter - 1}"
 
-    def _emit(self, op, a1=None, a2=None, r=None):
-        self.quads.append(Quadruple(op, a1, a2, r))
+    def _emit(self, op: str, a1=None, a2=None, r=None) -> Quadruple:
+        q = Quadruple(op, a1, a2, r)
+        self.quads.append(q)
+        return q
 
-    # ---- walkers ----
+    # ---- declarations ----
 
-    def _fn(self, node):
-        if not isinstance(node, FunctionDeclNode):
-            return
+    def _fn(self, node: FunctionDeclNode) -> None:
+        self._current_fn = node.name
         self._emit("func", node.name)
+        # Parameter slots — we lower to local copies.
         for p in node.params:
-            self._emit("param", p.name)
-        if node.body:
+            self._emit("param", p.name, type_of(p.param_type))
+        if node.body is not None:
             self._blk(node.body)
-        self._emit("endfunc")
+        # Ensure the function has a return epilogue even if user code
+        # didn't end with a return (avoids fall-through).
+        self._emit("endfunc", node.name)
+        self._current_fn = None
 
-    def _blk(self, node):
+    def _blk(self, node: BlockStmtNode) -> None:
         for s in node.statements:
             self._stmt(s)
 
-    def _stmt(self, node):
-        if isinstance(node, VarDeclStmtNode):
-            if node.init_expr:
-                val = self._expr(node.init_expr)
-                self._emit("assign", val, None, node.name)
-        elif isinstance(node, AssignStmtNode):
-            val = self._expr(node.value)
-            self._emit("assign", val, None, node.left.name)
-        elif isinstance(node, ReturnStmtNode):
-            if node.expr:
-                self._emit("return", self._expr(node.expr))
-            else:
-                self._emit("return")
-        elif isinstance(node, ExprStmtNode):
-            if isinstance(node.expr, AssignStmtNode):
-                self._stmt(node.expr)
-            else:
-                self._expr(node.expr)
-        elif isinstance(node, IfStmtNode):
-            self._if(node)
-        elif isinstance(node, WhileStmtNode):
-            self._while(node)
-        elif isinstance(node, ForStmtNode):
-            self._for(node)
-        elif isinstance(node, BlockStmtNode):
-            self._blk(node)
-        # EmptyStmtNode — no-op
+    # ---- statements ----
 
-    def _if(self, node):
+    def _stmt(self, node) -> None:
+        if isinstance(node, EmptyStmtNode):
+            return
+        if isinstance(node, BlockStmtNode):
+            self._blk(node)
+            return
+        if isinstance(node, VarDeclStmtNode):
+            self._var_decl(node)
+            return
+        if isinstance(node, AssignStmtNode):
+            self._assign(node)
+            return
+        if isinstance(node, ReturnStmtNode):
+            self._return(node)
+            return
+        if isinstance(node, IfStmtNode):
+            self._if(node)
+            return
+        if isinstance(node, WhileStmtNode):
+            self._while(node)
+            return
+        if isinstance(node, ForStmtNode):
+            self._for(node)
+            return
+        if isinstance(node, ExprStmtNode):
+            # The parser sometimes wraps an assignment in an ExprStmtNode
+            # (e.g. `try_parse_expression` returns AssignStmtNode and
+            # `parse_statement` wraps it). Unwrap and dispatch.
+            inner = node.expr
+            if isinstance(inner, AssignStmtNode):
+                self._assign(inner)
+                return
+            if isinstance(inner, FuncCallNode):
+                self._call_stmt(inner)
+                return
+            # Plain expression — evaluate for side-effects.
+            self._expr(inner)
+            return
+        # Unknown — be defensive: walk children.
+        for attr in ("condition", "body", "then_block", "else_block",
+                     "expr", "value", "left", "right", "start", "end",
+                     "init_expr", "iterable"):
+            child = getattr(node, attr, None)
+            if isinstance(child, ASTNode):
+                if attr in ("condition", "left", "right", "start", "end",
+                            "index", "expr", "value", "init_expr", "iterable"):
+                    self._expr(child)
+                else:
+                    self._stmt(child)
+
+    def _var_decl(self, node: VarDeclStmtNode) -> None:
+        # `let x: i32;`              →  (no quad — slot reserved on first use)
+        # `let x: i32 = 10;`         →  (assign, 10, _, x)              ← 一行
+        # `let x: i32 = a + b;`      →  (+, a, b, tN)
+        #                               (assign, tN, _, x)
+        # No `alloc` is emitted: the variable's type comes from the let
+        # binding (known to the back-end from the symbol table), and a
+        # bare declaration needs no IR — the slot is allocated lazily on
+        # first assignment. Constant initializers collapse to one quad.
+        if node.init_expr is None:
+            return
+
+        if isinstance(node.init_expr, NumberLiteralNode):
+            # Constant initialization: one `assign` quad, no temp.
+            self._emit("assign", str(node.init_expr.value), None, node.name)
+            return
+
+        # General expression initializer — fold the value into a temp,
+        # then assign it to the variable's slot.
+        val = self._expr(node.init_expr)
+        self._emit("assign", val, None, node.name)
+
+    def _assign(self, node: AssignStmtNode) -> None:
+        # target must be an l-value (parser guarantees that)
+        target = self._lvalue_target(node.left)
+        val = self._expr(node.value)
+        if target["kind"] == "var":
+            self._emit("assign", val, None, target["name"])
+        elif target["kind"] == "array_elem":
+            self._emit("array_set", target["array"], target["index"], val)
+
+    def _return(self, node: ReturnStmtNode) -> None:
+        if node.expr is not None:
+            val = self._expr(node.expr)
+            self._emit("return", val, None, self._current_fn)
+        else:
+            self._emit("return", None, None, self._current_fn)
+
+    def _if(self, node: IfStmtNode) -> None:
         cond = self._expr(node.condition)
-        e_lab = self._label()
-        end_lab = self._label()
-        self._emit("if_false", cond, None, e_lab)
+        else_lab = self._label("L_else_")
+        end_lab  = self._label("L_end_")
+        self._emit("if_false", cond, None, else_lab)
         self._blk(node.then_block)
         self._emit("goto", None, None, end_lab)
-        self._emit("label", None, None, e_lab)
-        if node.else_block:
+        self._emit("label", None, None, else_lab)
+        if node.else_block is not None:
             if isinstance(node.else_block, IfStmtNode):
                 self._if(node.else_block)
-            else:
+            elif isinstance(node.else_block, BlockStmtNode):
                 self._blk(node.else_block)
+            else:
+                self._stmt(node.else_block)
         self._emit("label", None, None, end_lab)
 
-    def _while(self, node):
-        start = self._label()
-        end = self._label()
+    def _while(self, node: WhileStmtNode) -> None:
+        start = self._label("L_while_")
+        end   = self._label("L_end_")
         self._emit("label", None, None, start)
         cond = self._expr(node.condition)
         self._emit("if_false", cond, None, end)
@@ -110,46 +243,72 @@ class IRGenerator:
         self._emit("goto", None, None, start)
         self._emit("label", None, None, end)
 
-    def _for(self, node):
-        """ForStmt -> for i in start..end { body }
-        IR: i = start
-            L0: if i >= end goto L1
+    def _for(self, node: ForStmtNode) -> None:
+        """for x in a..b { body }
+        IR:
+            x = a
+            L0: t = x < b
+                if_false t goto L1
                 body
-                i = i + 1
+                x = x + 1
                 goto L0
             L1:
         """
         if isinstance(node.iterable, RangeNode):
             start_val = self._expr(node.iterable.start)
-            end_val = self._expr(node.iterable.end)
+            end_val   = self._expr(node.iterable.end)
+            # No `alloc` — the for-loop variable's type (i32) is fixed by
+            # the language; the first `assign` below reserves its slot.
             self._emit("assign", start_val, None, node.var_name)
-
-            loop_start = self._label()
-            loop_end = self._label()
+            loop_start = self._label("L_for_")
+            loop_end   = self._label("L_end_")
             self._emit("label", None, None, loop_start)
-
-            # condition: i < end
-            cond = self._temp()
-            self._emit("<", node.var_name, end_val, cond)
-            self._emit("if_false", cond, None, loop_end)
-
+            t = self._temp()
+            self._emit("<", node.var_name, end_val, t)
+            self._emit("if_false", t, None, loop_end)
             self._blk(node.body)
-
-            # increment: i = i + 1
-            self._emit("+", node.var_name, "1", node.var_name)
+            t2 = self._temp()
+            self._emit("+", node.var_name, "1", t2)
+            self._emit("assign", t2, None, node.var_name)
             self._emit("goto", None, None, loop_start)
             self._emit("label", None, None, loop_end)
         else:
-            # 表达式作为可迭代结构 (如数组)
+            # Plain expression iterable (e.g. an array) — degenerate path.
             self._expr(node.iterable)
             self._blk(node.body)
 
-    def _expr(self, node):
-        """Evaluate expression, return the name holding its value (temp or var)."""
-        if isinstance(node, NumberLiteralNode):
+    # ---- lvalue helpers ----
+
+    def _lvalue_target(self, node) -> dict:
+        """Return a description of an l-value suitable for assignment."""
+        if isinstance(node, LValueNode):
+            return {"kind": "var", "name": node.name}
+        if isinstance(node, ArrayAccessNode):
+            idx = self._expr(node.index)
+            inner = node.array
+            if isinstance(inner, LValueNode):
+                return {"kind": "array_elem", "array": inner.name, "index": idx}
+            # Nested access — materialise the inner address into a temp.
+            base = self._expr(inner)
             t = self._temp()
-            self._emit("=", str(node.value), None, t)
-            return t
+            self._emit("=", base, None, t)
+            return {"kind": "array_elem", "array": t, "index": idx}
+        # Fallback: emit as expression
+        return {"kind": "var", "name": self._expr(node)}
+
+    # ---- expressions ----
+
+    def _expr(self, node) -> str:
+        """Evaluate expression, return the name holding its value.
+
+        Number literals are returned as the literal string itself so that
+        downstream operators can fold them in directly (e.g. `(+, x, 20, t)`
+        instead of `(=, 20, _, t1); (+, x, t1, t2)`).
+        """
+        if node is None:
+            return self._temp()  # unreachable for well-formed AST
+        if isinstance(node, NumberLiteralNode):
+            return str(node.value)
         if isinstance(node, LValueNode):
             return node.name
         if isinstance(node, UnaryMinusNode):
@@ -158,27 +317,73 @@ class IRGenerator:
             self._emit("neg", v, None, t)
             return t
         if isinstance(node, BinaryExprNode):
-            left = self._expr(node.left)
+            left  = self._expr(node.left)
             right = self._expr(node.right)
             t = self._temp()
             self._emit(node.op, left, right, t)
             return t
         if isinstance(node, FuncCallNode):
+            # Look up whether the function actually returns a value.
+            decl = self._fn_table.get(node.name)
+            is_void = decl is not None and decl.return_type is None
             for a in node.args:
-                self._emit("arg", self._expr(a))
+                v = self._expr(a)
+                self._emit("arg", v, None, None)
+            if is_void:
+                # Used as a value but the function has no return — emit
+                # the call for side-effects but no result temp.
+                self._emit("call", node.name, str(len(node.args)), None)
+                t = self._temp()
+                self._emit("=", "0", None, t)
+                return t
             t = self._temp()
             self._emit("call", node.name, str(len(node.args)), t)
             return t
         if isinstance(node, ArrayLiteralNode):
-            for elem in node.elements:
-                self._expr(elem)
+            # Build the array in a synthetic temp: emit a sequence of writes
+            # to fresh slots? For simplicity we emit an "array_lit" pseudo-op
+            # carrying element names; the back-end can lower to allocation
+            # + per-index stores.
+            elem_names = [self._expr(e) for e in node.elements]
             t = self._temp()
-            self._emit("=", "0", None, t)  # placeholder
+            self._emit("array_lit", ",".join(elem_names), str(len(elem_names)), t)
             return t
         if isinstance(node, ArrayAccessNode):
-            self._expr(node.array)
-            self._expr(node.index)
+            base = self._expr(node.array)
+            idx  = self._expr(node.index)
             t = self._temp()
-            self._emit("=", "0", None, t)  # placeholder
+            self._emit("array_get", base, idx, t)
             return t
+        if isinstance(node, RangeNode):
+            # Range is not a value expression; return a placeholder
+            t = self._temp()
+            self._emit("=", "0", None, t)
+            return t
+        # Fallback
+        t = self._temp()
+        self._emit("=", "0", None, t)
+        return t
+
+    def _call_stmt(self, node: FuncCallNode) -> None:
+        """Emit a function call that is used as a statement (no result)."""
+        for a in node.args:
+            v = self._expr(a)
+            self._emit("arg", v, None, None)
+        self._emit("call", node.name, str(len(node.args)), None)
+
+
+# --------------------------------------------------------------------------- #
+# Local helper — replicate the type-name logic from the semantic module       #
+# so that IR generation does not depend on it.                                #
+# --------------------------------------------------------------------------- #
+
+def type_of(node) -> Optional[str]:
+    """Mirror of semantic.type_of_type_node without importing semantic."""
+    if node is None:
         return None
+    if isinstance(node, ArrayTypeNode):
+        inner = type_of(node.element_type)
+        return f"[{inner};{node.size}]"
+    if isinstance(node, TypeNode):
+        return node.type_name
+    return None

@@ -13,7 +13,7 @@ if _root not in sys.path:
 
 from lexer import Lexer
 from parser import Parser, ParserTracer
-from semantic import SemanticAnalyzer
+from semantic import SemanticAnalyzer, SemanticError
 from ir_generator import IRGenerator
 from assembly_generator import AssemblyGenerator
 from compiler_ast import *
@@ -133,7 +133,7 @@ def api_semantic():
             "success": True,
             "ast": _ast_to_dict(ast),
             "symbol_table": symbol_table,
-            "semantic_errors": [{"message": e} for e in sem_errors],
+            "semantic_errors": [_semantic_error_to_dict(e) for e in sem_errors],
         })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 400
@@ -242,7 +242,7 @@ def api_pipeline():
         analyzer = SemanticAnalyzer()
         sem_errors = analyzer.analyze(ast)
         result["symbol_table"] = _extract_symbol_table(analyzer)
-        result["semantic_errors"] = [{"message": e} for e in sem_errors]
+        result["semantic_errors"] = [_semantic_error_to_dict(e) for e in sem_errors]
 
         # 4. IR Generation
         ir_gen = IRGenerator()
@@ -296,6 +296,13 @@ def _quad_to_dict(q):
         "arg2": q.arg2,
         "result": q.result,
     }
+
+
+def _semantic_error_to_dict(err):
+    """Normalize a SemanticError (or legacy string) to a serializable dict."""
+    if isinstance(err, SemanticError):
+        return err.to_dict()
+    return {"code": "E_SEMANTIC", "message": str(err), "line": 0, "column": 0, "node": ""}
 
 
 def _ast_to_dict(node):
@@ -407,11 +414,27 @@ def _ast_to_dict(node):
 
 
 def _extract_symbol_table(analyzer):
-    """Extract flat symbol table from analyzer scopes."""
-    symbols = {}
-    for scope in analyzer.scopes:
-        for name, info in scope.items():
-            symbols[name] = info
+    """Extract flat symbol table from analyzer scopes.
+
+    Uses the analyzer's flat symbol registry (which survives scope
+    pop) so the UI can show every variable, parameter, and function
+    that the semantic pass encountered.
+    """
+    symbols: dict = {}
+    flat = analyzer.symbols.all
+    for name, sym in flat.items():
+        info = {
+            "kind": sym.kind,
+            "type": sym.type_name,
+            "mutable": sym.mutable,
+            "initialized": sym.initialized,
+        }
+        if sym.kind == "fn":
+            info["params"] = [
+                {"name": p.name, "type": p.type_name, "mutable": p.mutable}
+                for p in sym.params
+            ]
+        symbols[name] = info
     return symbols
 
 
