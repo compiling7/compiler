@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python -c:*)"
+      "Bash(python -c:*)",
+      "Bash(node -e \"\n// Extract and minimally test the _astToText function\nfunction _astToText(node, depth) {\n  if (!node) return '''';\n  const indent = ''  ''.repeat(depth);\n  let line = indent + node.name;\n  if (node.label) line += '' ['' + node.label + '']'';\n  if (node.extra) line += '' ('' + node.extra + '')'';\n  let text = line + ''\\n'';\n  if (node.children) {\n    for (const c of node.children) text += _astToText(c, depth + 1);\n  }\n  return text;\n}\n\n// Test with sample AST\nconst sampleAST = {\n  name: ''Program'',\n  children: [\n    {\n      name: ''FunctionDecl'',\n      label: ''main'',\n      children: [\n        { name: ''Block'', extra: ''stmts=2'', children: [\n          { name: ''VarDecl'', label: ''x'' },\n          { name: ''ReturnStmt'', children: [\n            { name: ''NumberLiteral'', label: ''42'' }\n          ]}\n        ]}\n      ]\n    }\n  ]\n};\nconsole.log(_astToText(sampleAST, 0));\nconsole.log(''JS syntax OK'');\n\")"
     ],
     "deny": [],
     "ask": []

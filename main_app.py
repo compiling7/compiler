@@ -48,6 +48,33 @@ def get_resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 
+class SaveApi:
+    """Native API exposed to JavaScript via PyWebView JS bridge.
+
+    Methods here can be called from JS as window.pywebview.api.<method>(...).
+    """
+
+    def save_file(self, content, filename="compiler_output.txt"):
+        """Show native save dialog and write content to the selected file."""
+        import webview
+
+        # Show native OS save dialog
+        file_path = webview.windows[0].create_file_dialog(
+            webview.FileDialog.SAVE,
+            save_filename=filename,
+            file_types=('Text files (*.txt)', 'All files (*.*)'),
+        )
+        if not file_path:
+            return False  # User cancelled
+
+        try:
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(content)
+            return True
+        except Exception:
+            return False
+
+
 def main():
     """Main entry point."""
     # Start Flask server in background thread
@@ -61,10 +88,14 @@ def main():
     window_title = "CompilerLab · Rust 编译器可视化"
     url = f"http://{HOST}:{PORT}/"
 
+    # Native API bridge for file operations
+    save_api = SaveApi()
+
     # Window config: large enough for the IDE layout
     window = webview.create_window(
         title=window_title,
         url=url,
+        js_api=save_api,
         width=1440,
         height=900,
         min_size=(1024, 680),

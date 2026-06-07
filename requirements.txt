@@ -1,11 +1,10 @@
-
 # CompilerLab - Rust 编译器可视化工具
 #
 # 方案: PyWebView + Flask + HTML/TailwindCSS
 #
 # 安装: pip install -r requirements.txt
 # 运行: python main_app.py
-# 打包: pyinstaller --onefile --name CompilerLab main_app.py
+# 打包: python build.py
 
 # Web框架
 flask>=3.0.0

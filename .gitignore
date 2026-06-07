@@ -1,6 +1,6 @@
 __pycache__/
 .history/
-.claude
+.claude/
 dist/
 build/
 *.exe

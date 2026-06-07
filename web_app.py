@@ -4,7 +4,7 @@ import os
 import json
 import sys
 
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, make_response
 
 # Ensure the project root is on sys.path
 _root = os.path.dirname(os.path.abspath(__file__))
@@ -46,6 +46,21 @@ def index():
 @app.route("/api/<path:filename>")
 def static_files(filename):
     return send_from_directory(app.static_folder, filename)
+
+
+# ── Download API (for save in desktop/exe mode) ─
+
+@app.route("/api/download", methods=["POST"])
+def api_download():
+    """Return content as a downloadable text file.
+    This server-side approach works in PyWebView/native web views
+    where JavaScript blob downloads are often blocked."""
+    content = request.form.get("content", request.get_data(as_text=True))
+    filename = request.form.get("filename", "compiler_output.txt")
+    response = make_response(content)
+    response.headers["Content-Disposition"] = f"attachment; filename={filename}"
+    response.headers["Content-Type"] = "text/plain; charset=utf-8"
+    return response
 
 
 # ── Lexer API ─────────────────────────────────
