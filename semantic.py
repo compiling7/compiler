@@ -1,17 +1,8 @@
-"""Semantic analyzer: symbol table + type checking + static error diagnostics.
+"""语义分析器:符号表 + 类型检查 + 静态错误诊断。
 
-Implements the static semantic checks required by the CompilerLab assignment
-(§0.1 ~ §5.1):
-
-  * Scope-aware symbol table with "重影" (shadowing) on let.
-  * Type checking for i32 — currently the only supported type.
-  * L-value rules: assignment target must be a declared mutable variable
-    and the RHS type must match.
-  * Function calls: arity, argument types, return-value usage.
-  * Function return type must match the expression type in `return`.
-  * `if` / `while` condition must be i32.
-  * Diagnostics carry line / column info and a stable error code so the
-    front-end can render them.
+实现类 Rust 语言的静态语义检查:作用域感知的符号表(支持 let 重影)、
+类型检查、左值与可变性规则、函数调用与返回类型一致性、控制流约束等。
+诊断信息携带行/列号和稳定错误码,供前端渲染。
 """
 
 from __future__ import annotations
@@ -23,10 +14,10 @@ from compiler_ast import *
 
 
 # --------------------------------------------------------------------------- #
-# Error reporting                                                              #
+# 错误报告                                                                      #
 # --------------------------------------------------------------------------- #
 
-# Error codes — stable identifiers used by the front-end.
+# 错误码,前端按此过滤/着色。
 E_UNDEFINED_VAR      = "E_UNDEFINED_VAR"
 E_UNDEFINED_FN       = "E_UNDEFINED_FN"
 E_REDECLARE_PARAM    = "E_REDECLARE_PARAM"
@@ -49,7 +40,7 @@ E_UNINITIALIZED      = "E_UNINITIALIZED"
 
 @dataclass
 class SemanticError:
-    """A single static semantic error."""
+    """单条静态语义错误。"""
     code: str
     message: str
     line: int = 0
@@ -67,13 +58,10 @@ class SemanticError:
 
 
 # --------------------------------------------------------------------------- #
-# Symbol table                                                                 #
+# 符号表                                                                        #
 # --------------------------------------------------------------------------- #
 
-# We don't have source positions on AST nodes (lexer tokens do, but the AST
-# builder doesn't propagate them). For now we expose a hook so a future
-# parser that records line numbers can plug in; for diagnostics we fall back
-# to 0/0.
+# AST 节点暂未携带源位置;此处保留钩子供未来解析器接入,缺失时回退 (0, 0)。
 def _pos(node: Any) -> tuple[int, int]:
     line = getattr(node, "line", 0) or 0
     col = getattr(node, "column", 0) or 0
@@ -84,12 +72,15 @@ def _pos(node: Any) -> tuple[int, int]:
 class Symbol:
     name: str
     kind: str            # 'fn' | 'var' | 'param'
-    type_name: str       # 'i32' or 'void' for functions
+    type_name: str       # 函数为 'i32' 或 'void'
     mutable: bool = False
     initialized: bool = False
-    # For functions
+    # 声明处的源位置(用于未初始化等错误定位)
+    decl_line: int = 0
+    decl_column: int = 0
+    # 仅对函数有意义
     params: List["ParamSymbol"] = field(default_factory=list)
-    has_return: bool = False   # whether the function actually returns a value
+    has_return: bool = False
 
 
 @dataclass
@@ -99,22 +90,22 @@ class ParamSymbol:
     mutable: bool
 
 
-# Built-in symbols that the language provides.
+# 语言内置符号
 BUILTIN_SYMBOLS: Dict[str, Symbol] = {}
 
 
 class SymbolTable:
-    """Stack of scopes. Each scope is a dict mapping name -> Symbol."""
+    """作用域栈:每个作用域是一个将名字映射到 Symbol 的字典。
+
+    除栈式作用域外,还维护一个扁平注册表 `all`,作用域弹出后仍能查询
+    历史上出现过的所有符号,供前端符号表面板使用。
+    """
 
     def __init__(self):
         self.scopes: List[Dict[str, Symbol]] = [{}]
-        # A flat registry of every symbol ever defined. The UI uses this
-        # to display the symbol table after analysis finishes (when
-        # scopes have already been popped). Lookups still walk the
-        # scope stack, but definitions are recorded here too.
         self.all: Dict[str, Symbol] = {}
 
-    # -- scope management --
+    # -- 作用域管理 --
     def enter(self) -> None:
         self.scopes.append({})
 
@@ -122,14 +113,10 @@ class SymbolTable:
         if len(self.scopes) > 1:
             self.scopes.pop()
 
-    # -- operations --
+    # -- 操作 --
     def define(self, sym: Symbol) -> None:
-        """Define `sym` in the current scope, overwriting any same-scope
-        binding (lets re-declarations shadow within the same block).
-        """
+        """定义 `sym`;同作用域内同名绑定被覆盖(let 重影)。"""
         self.scopes[-1][sym.name] = sym
-        # Also keep a flat copy. Latest definition wins; for the front-end
-        # this is fine because shadowed vars share a name anyway.
         self.all[sym.name] = sym
 
     def lookup(self, name: str) -> Optional[Symbol]:
@@ -142,7 +129,6 @@ class SymbolTable:
         return self.scopes[-1].get(name)
 
     def all_symbols(self) -> Dict[str, Symbol]:
-        """Return the flat registry of every symbol seen so far."""
         return self.all
 
 
@@ -152,16 +138,15 @@ class SymbolTable:
 
 TYPE_I32 = "i32"
 TYPE_VOID = "void"
-TYPE_BOOL = "i32"   # booleans are encoded as i32 (0 / 1)
+TYPE_BOOL = "i32"   # 布尔值复用 i32(0 / 1)
 
-# Operators that require integer operands and return i32.
+# 要求整型操作数、返回 i32 的运算符
 INT_BINOPS = {"+", "-", "*", "/"}
-# Comparison operators return i32 (0 / 1).
-CMP_BINOPS = {"<", "<=", ">", ">=", "==", "!="}
+CMP_BINOPS  = {"<", "<=", ">", ">=", "==", "!="}
 
 
 def type_of_type_node(node: Any) -> str:
-    """Return the canonical type name for a TypeNode / ArrayTypeNode."""
+    """返回 TypeNode / ArrayTypeNode 的规范类型名。"""
     if node is None:
         return TYPE_VOID
     if isinstance(node, ArrayTypeNode):
@@ -172,13 +157,11 @@ def type_of_type_node(node: Any) -> str:
 
 
 # --------------------------------------------------------------------------- #
-# Semantic Analyzer                                                            #
+# 语义分析器                                                                    #
 # --------------------------------------------------------------------------- #
 
 class SemanticAnalyzer:
-    """Walks the AST, builds a scoped symbol table, performs type checks,
-    and collects a list of :class:`SemanticError`.
-    """
+    """遍历 AST、构建符号表、执行类型检查,并收集 :class:`SemanticError` 列表。"""
 
     def __init__(self, require_main: bool = False):
         self.symbols = SymbolTable()
@@ -187,11 +170,11 @@ class SemanticAnalyzer:
         self._loop_depth: int = 0
         self._has_main: bool = False
         self._require_main: bool = require_main
-        # Bind built-ins
+        # 绑定内置符号
         for name, sym in BUILTIN_SYMBOLS.items():
             self.symbols.define(sym)
 
-    # ---- diagnostics ----
+    # ---- 诊断 ----
 
     def _err(self, code: str, message: str, node: Any) -> None:
         line, col = _pos(node)
@@ -201,7 +184,7 @@ class SemanticAnalyzer:
             node_name=getattr(node, "node_name", type(node).__name__),
         ))
 
-    # ---- entry point ----
+    # ---- 入口 ----
 
     def analyze(self, program: ProgramNode) -> List[SemanticError]:
         self.errors = []
@@ -210,10 +193,7 @@ class SemanticAnalyzer:
         if not isinstance(program, ProgramNode):
             return self.errors
 
-        # ---- Pass 1: collect all top-level function signatures so calls
-        #      to forward-referenced functions don't get flagged as undefined.
-        #      Rust actually doesn't allow forward calls without decl, but
-        #      the assignment doesn't pin that down — we accept any order.
+        # 第一遍:收集函数签名,允许任意顺序定义与前向引用。
         for decl in program.declarations:
             if isinstance(decl, FunctionDeclNode):
                 if self.symbols.lookup_local(decl.name) is not None:
@@ -230,7 +210,7 @@ class SemanticAnalyzer:
                         ],
                     ))
 
-        # ---- Pass 2: visit every function body in detail.
+        # 第二遍:详细访问每个函数体。
         for decl in program.declarations:
             if isinstance(decl, FunctionDeclNode):
                 if decl.name == "main":
@@ -242,13 +222,12 @@ class SemanticAnalyzer:
 
         return self.errors
 
-    # ---- declarations ----
+    # ---- 声明 ----
 
     def _visit_fn(self, node: FunctionDeclNode) -> None:
         fn_sym = self.symbols.lookup(node.name)
         if fn_sym is None:
-            # Already reported as duplicate during pass 1; still visit body
-            # to surface nested errors rather than silently dropping them.
+            # 第一遍已上报为重复定义,这里补建一个临时符号,继续访问函数体。
             fn_sym = Symbol(
                 name=node.name, kind="fn",
                 type_name=type_of_type_node(node.return_type),
@@ -259,7 +238,7 @@ class SemanticAnalyzer:
             )
         self._current_fn = fn_sym
         self.symbols.enter()
-        # parameters
+        # 形参
         for p in node.params:
             if self.symbols.lookup_local(p.name) is not None:
                 self._err(E_REDECLARE_PARAM,
@@ -272,7 +251,6 @@ class SemanticAnalyzer:
             ))
         if node.body:
             self._visit_block(node.body)
-        # Check return type vs actual returns
         declared = type_of_type_node(node.return_type)
         if declared != TYPE_VOID and not fn_sym.has_return:
             self._err(
@@ -283,13 +261,31 @@ class SemanticAnalyzer:
         self.symbols.exit()
         self._current_fn = None
 
-    # ---- statements ----
+    # ---- 语句 ----
 
     def _visit_block(self, node: BlockStmtNode) -> None:
         self.symbols.enter()
         for s in node.statements:
             self._visit_stmt(s)
+        # 块退出前,扫描本作用域内未初始化的变量
+        self._check_uninitialized_in_current_scope()
         self.symbols.exit()
+
+    def _check_uninitialized_in_current_scope(self) -> None:
+        """对当前作用域内仍未初始化的 var 报 E_UNINITIALIZED。
+
+        位置取自声明时的 decl_line/decl_column(由 VarDeclStmtNode 提供)。
+        """
+        for sym in self.symbols.scopes[-1].values():
+            if sym.kind == "var" and not sym.initialized:
+                err = SemanticError(
+                    code=E_UNINITIALIZED,
+                    message=f"变量 '{sym.name}' 声明后未初始化",
+                    line=sym.decl_line,
+                    column=sym.decl_column,
+                    node_name="VarDeclStmt",
+                )
+                self.errors.append(err)
 
     def _visit_stmt(self, node: Any) -> None:
         if isinstance(node, EmptyStmtNode):
@@ -335,7 +331,7 @@ class SemanticAnalyzer:
             return
 
         if isinstance(node, ForStmtNode):
-            # Loop variable is defined in the loop body scope.
+            # 循环变量定义在循环体作用域内
             if isinstance(node.iterable, RangeNode):
                 start_t = self._visit_expr(node.iterable.start) or TYPE_I32
                 end_t   = self._visit_expr(node.iterable.end)   or TYPE_I32
@@ -363,9 +359,7 @@ class SemanticAnalyzer:
             return
 
         if isinstance(node, ExprStmtNode):
-            # Parser wraps an assignment-as-statement in ExprStmtNode
-            # (see try_parse_expression / parse_statement). Unwrap so
-            # the assignment gets full type & mutability checks.
+            # 解析器把"作为语句的赋值"包在 ExprStmtNode 中,这里解包后转交 _visit_assign
             inner = node.expr
             if isinstance(inner, AssignStmtNode):
                 self._visit_assign(inner)
@@ -378,26 +372,23 @@ class SemanticAnalyzer:
         if node.init_expr is not None:
             rhs_t = self._visit_expr(node.init_expr)
             if decl_type is None:
-                # type inference: take the RHS type (default i32)
+                # 类型推断:取右值类型,缺省 i32
                 decl_type = rhs_t or TYPE_I32
             else:
                 if rhs_t is not None and rhs_t != decl_type:
                     self._err(E_TYPE_MISMATCH,
                               f"变量 '{node.name}' 声明类型 {decl_type} 与初始值类型 {rhs_t} 不匹配",
                               node)
-        # else: no initializer — type may be inferred later from the first
-        # assignment. We mark the variable as uninitialized; the IR layer
-        # defaults the slot type to i32 which matches the assignment path.
-
-        # Re-declaration is *allowed* (shadowing / 重影) — the spec
-        # explicitly says each let shadows the previous binding.
+        # 无初始化表达式:留待首次赋值推断,缺省按 i32 处理。
         if decl_type is None:
-            decl_type = TYPE_I32   # best-effort default; type-mismatch
-                                    # will surface on first use
+            decl_type = TYPE_I32
+
+        # 允许同作用域重复声明(重影);新绑定覆盖旧绑定。
         self.symbols.define(Symbol(
             name=node.name, kind="var",
             type_name=decl_type, mutable=node.is_mutable,
             initialized=node.init_expr is not None,
+            decl_line=node.line, decl_column=node.column,
         ))
 
     def _visit_assign(self, node: AssignStmtNode) -> None:
@@ -407,8 +398,7 @@ class SemanticAnalyzer:
             if sym is None:
                 self._err(E_UNDEFINED_VAR,
                           f"变量 '{left.name}' 未声明", left)
-                # Even if undefined, still visit RHS to surface more errors.
-                self._visit_expr(node.value)
+                self._visit_expr(node.value)  # 仍访问右值,便于暴露更多错误
                 return
             if sym.kind == "fn":
                 self._err(E_NOT_LVALUE,
@@ -425,7 +415,7 @@ class SemanticAnalyzer:
                           node)
             sym.initialized = True
         else:
-            # Non-lvalue on the left is already a parser error, but be safe.
+            # 左侧非左值已被解析器拦截,这里加一道保险
             self._err(E_NOT_LVALUE, "赋值左值不合法", left)
             self._visit_expr(node.value)
 
@@ -447,12 +437,10 @@ class SemanticAnalyzer:
                       f"实际返回 {rhs_t}", node)
         self._current_fn.has_return = True
 
-    # ---- expressions ----
+    # ---- 表达式 ----
 
     def _visit_expr(self, node: Any) -> Optional[str]:
-        """Visit an expression and return its inferred type.
-        Returns ``None`` for type errors (already reported).
-        """
+        """访问表达式并返回其推断类型;类型错误返回 ``None``(错误已上报)。"""
         if node is None:
             return None
         if isinstance(node, NumberLiteralNode):
@@ -464,12 +452,12 @@ class SemanticAnalyzer:
                           f"变量 '{node.name}' 未声明", node)
                 return None
             if sym.kind == "fn":
-                # Using a function name as a value — only legal as a call.
+                # 函数名仅在调用表达式中合法,直接当值用视作不合法左值
                 self._err(E_NOT_LVALUE,
                           f"函数名 '{node.name}' 只能通过调用表达式使用", node)
                 return TYPE_VOID
             if not sym.initialized:
-                self._err(E_UNDEFINED_VAR,
+                self._err(E_UNINITIALIZED,
                           f"变量 '{node.name}' 尚未初始化", node)
             return sym.type_name
 
@@ -502,7 +490,7 @@ class SemanticAnalyzer:
                     self._err(E_TYPE_MISMATCH,
                               f"比较运算 '{node.op}' 需要 i32 操作数，实际为 {rt}", node)
                 return TYPE_I32
-            # Unknown operator (parser already caught it) — fail soft.
+            # 未知运算符:解析器已处理,此处软失败。
             return TYPE_I32
 
         if isinstance(node, FuncCallNode):
@@ -510,17 +498,14 @@ class SemanticAnalyzer:
             if sym is None or sym.kind != "fn":
                 self._err(E_UNDEFINED_FN,
                           f"函数 '{node.name}' 未声明", node)
-                # Still visit args to surface nested errors.
-                for a in node.args:
+                for a in node.args:           # 仍访问实参,暴露嵌套错误
                     self._visit_expr(a)
                 return None
-            # arity
             if len(node.args) != len(sym.params):
                 self._err(E_ARITY,
                           f"函数 '{node.name}' 需要 {len(sym.params)} 个参数，"
                           f"实际传入 {len(node.args)} 个",
                           node)
-            # arg types
             for i, arg in enumerate(node.args):
                 at = self._visit_expr(arg)
                 if i < len(sym.params) and at is not None:
@@ -530,9 +515,7 @@ class SemanticAnalyzer:
                                   f"函数 '{node.name}' 第 {i + 1} 个参数应为 {expect}，"
                                   f"实际为 {at}",
                                   arg)
-            # If the function has no return value, it can't be used as a
-            # value (assignment RHS, operand, return value).
-            if sym.type_name == TYPE_VOID:
+            if sym.type_name == TYPE_VOID:    # void 函数不能作为值使用
                 self._err(E_VOID_USED,
                           f"函数 '{node.name}' 没有返回值，不能作为右值参与运算",
                           node)
@@ -556,15 +539,13 @@ class SemanticAnalyzer:
             if idx_t is not None and idx_t != TYPE_I32:
                 self._err(E_TYPE_MISMATCH,
                           f"数组下标必须为 i32，实际为 {idx_t}", node.index)
-            # Strip one dimension off the array type for the element type.
+            # 数组类型去掉一维得到元素类型,如 "[i32;3]" -> "i32"
             if arr_t.startswith("[") and ";" in arr_t:
-                # e.g. "[i32;3]" -> "i32"
-                inner = arr_t[1:arr_t.index(";")]
-                return inner
+                return arr_t[1:arr_t.index(";")]
             return TYPE_I32
 
         if isinstance(node, RangeNode):
-            # Used only in for-in iterables; not a real value.
+            # 仅出现在 for-in 中,本身不作为值使用
             s = self._visit_expr(node.start) or TYPE_I32
             e = self._visit_expr(node.end) or TYPE_I32
             if s != TYPE_I32 or e != TYPE_I32:
@@ -576,9 +557,9 @@ class SemanticAnalyzer:
 
 
 # --------------------------------------------------------------------------- #
-# Convenience wrapper                                                          #
+# 入口                                                                          #
 # --------------------------------------------------------------------------- #
 
 def analyze(program: ProgramNode) -> List[SemanticError]:
-    """Functional entry point used by the front-end."""
+    """前端调用的函数式入口。"""
     return SemanticAnalyzer().analyze(program)

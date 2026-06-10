@@ -153,11 +153,11 @@ tailwind.config = {
   #ir-detail .dsec-title { margin-bottom: 5px; }
 
   /* Issues view (semantic errors) */
-  .iss-row { display:grid; grid-template-columns: 90px 1fr 80px; gap:8px; align-items:start; padding:8px 12px; border-bottom:1px solid #e2e2e7; cursor:pointer; }
+  .iss-row { display:grid; grid-template-columns: 90px 1fr 140px; gap:8px; align-items:start; padding:8px 12px; border-bottom:1px solid #e2e2e7; cursor:pointer; }
   .iss-row:hover { background:#f3f3f8; }
   .iss-code { font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:700; padding:2px 6px; border-radius:4px; background:#ffdad6; color:#93000a; text-align:center; }
   .iss-msg  { font-size:13px; color:#1a1c1f; }
-  .iss-pos  { font-family:'JetBrains Mono',monospace; font-size:11px; color:#717786; text-align:right; }
+  .iss-pos  { font-family:'JetBrains Mono',monospace; font-size:11px; color:#717786; text-align:right; white-space:nowrap; }
 </style>
 </head>
 <body class="bg-surface font-body-base text-on-surface overflow-hidden flex flex-col h-screen">
@@ -846,21 +846,44 @@ async function runParser() {
 
 async function runPipeline() {
   setStatus('Running pipeline...','hourglass_top',true);
-  const d = await api('pipeline', {source: S.source});
-  if (d.success) {
-    S.tokens = d.tokens||[]; S.ast = d.ast; S.trace = d.trace||[]; S.trace_events = d.trace_events||[];
-    S.quads = d.quads||[]; S.assembly = d.assembly||'';
-    S.symbolTable = d.symbol_table||{};
-    S.semantic_errors = d.semantic_errors||[];
-    // Build S.errors (issues view) from lex/parse/semantic
-    S.errors = S.semantic_errors.map(e => ({code:e.code, message:e.message, line:e.line, column:e.column, node:e.node}));
-    S.stats = d.stats||{}; S.parsed = true;
-    updateAll(); updateBadges(); updateEditorStats();
-    setStatus('Pipeline complete','check_circle');
-    switchView('ast');
-  } else if (d.stage==='lexer') { S.tokens=d.tokens||[]; S.errors=(d.lex_errors||[]).map(e=>({message:'Lexer: '+e})); renderLexer(); updateBadges(); switchView('lexer'); setStatus('Stopped at Lexer','error');
-  } else if (d.stage==='parser') { S.tokens=d.tokens||[]; S.trace=d.trace||[]; S.errors=(d.parse_errors||[]).map(e=>({message:'Parser: '+e})); updateBadges(); switchView('parser'); setStatus('Stopped at Parser','error');
-  } else { setStatus('Pipeline failed','error'); addError(d.error||'Error'); }
+  try {
+    // 每次 Run All 先清掉上次的状态,避免上一次语义/IR 等残留到本次
+    clearAll();
+    setStatus('Running pipeline...','hourglass_top',true);  // clearAll 内部 setStatus('Cleared'),这里覆盖回 "Running"
+    const d = await api('pipeline', {source: S.source});
+    if (d.success) {
+      S.tokens = d.tokens||[]; S.ast = d.ast; S.trace = d.trace||[]; S.trace_events = d.trace_events||[];
+      S.quads = d.quads||[]; S.assembly = d.assembly||'';
+      S.symbolTable = d.symbol_table||{};
+      S.semantic_errors = d.semantic_errors||[];
+      S.errors = S.semantic_errors.map(e => ({code:e.code, message:e.message, line:e.line, column:e.column, node:e.node}));
+      S.stats = d.stats||{}; S.parsed = true;
+      switchView('ast');
+      requestAnimationFrame(() => {
+        try {
+          updateAll(); updateBadges(); updateEditorStats();
+          setStatus('Pipeline complete','check_circle');
+        } catch(e) {
+          setStatus('Render error','error');
+          console.error('render error:', e);
+        }
+      });
+    } else if (d.stage==='lexer') {
+      S.tokens=d.tokens||[]; S.errors=(d.lex_errors||[]).map(e=>({message:'Lexer: '+e}));
+      switchView('lexer');
+      requestAnimationFrame(() => { renderLexer(); renderIssues(); updateBadges(); setStatus('Stopped at Lexer','error'); });
+    } else if (d.stage==='parser') {
+      S.tokens=d.tokens||[]; S.trace=d.trace||[]; S.errors=(d.parse_errors||[]).map(e=>({message:'Parser: '+e}));
+      switchView('parser');
+      requestAnimationFrame(() => { renderIssues(); updateBadges(); setStatus('Stopped at Parser','error'); });
+    } else {
+      setStatus('Pipeline failed','error');
+      addError(d.error||'Error');
+    }
+  } catch(e) {
+    setStatus('Pipeline crashed','error');
+    console.error('runPipeline crashed:', e);
+  }
 }
 
 // ═══════════════════════════════════════════
@@ -1213,10 +1236,10 @@ function renderIssues() {
     list.innerHTML = '<div class="text-green-600 font-body-sm flex items-center gap-2"><span class="material-symbols-outlined text-[16px]">check_circle</span>No errors</div>';
   } else {
     list.innerHTML = S.errors.map((e,i) => {
-      const isE = e.message.includes('rror')||e.message.includes('fail');
-      return `<div class="flex items-start gap-2 px-2 py-2 ${isE?'bg-error-container/30':'bg-yellow-50'} rounded mb-1 cursor-pointer hover:opacity-80" onclick="showErrorDetail(${i})">
-        <span class="material-symbols-outlined text-[16px] ${isE?'text-error':'text-yellow-600'}">${isE?'error':'warning'}</span>
-        <span class="font-code-sm text-[13px] ${isE?'text-error':'text-yellow-800'}">${escHtml(e.message)}</span>
+      // S.errors 中的条目来自词法/语法/语义阶段,全部视为 Error
+      return `<div class="flex items-start gap-2 px-2 py-2 bg-error-container/30 rounded mb-1 cursor-pointer hover:opacity-80" onclick="showErrorDetail(${i})">
+        <span class="material-symbols-outlined text-[16px] text-error">error</span>
+        <span class="font-code-sm text-[13px] text-error">${escHtml(e.message)}</span>
       </div>`;
     }).join('');
   }
@@ -1226,9 +1249,9 @@ function showErrorDetail(idx) {
   const e = S.errors[idx];
   document.getElementById('issues-error-info').innerHTML = `
     <div class="flex justify-between mb-1"><span class="text-outline">#</span><span>${idx}</span></div>
-    <div class="flex justify-between mb-1"><span class="text-outline">Severity</span><span class="text-error">${e.message.includes('rror')?'Error':'Warning'}</span></div>
+    <div class="flex justify-between mb-1"><span class="text-outline">Severity</span><span class="text-error">Error</span></div>
     ${e.code ? `<div class="flex justify-between mb-1"><span class="text-outline">Code</span><span class="font-mono text-[11px]">${escHtml(e.code)}</span></div>` : ''}
-    ${(e.line||e.column) ? `<div class="flex justify-between mb-1"><span class="text-outline">Position</span><span class="font-mono text-[11px]">${e.line||'?'}:${e.column||'?'}</span></div>` : ''}
+    ${(e.line||e.column) ? `<div class="flex justify-between mb-1"><span class="text-outline">位置</span><span class="font-mono text-[11px] whitespace-nowrap">第 ${e.line||'?'} 行,第 ${e.column||'?'} 列</span></div>` : ''}
     <div class="mt-2 p-2 bg-error-container/30 rounded font-code-sm text-[13px]">${escHtml(e.message)}</div>`;
 }
 
@@ -1289,7 +1312,7 @@ function renderSemantic() {
       errs.map((e,i) => `<div class="iss-row" onclick="showErrorDetail(${i})">
         <div class="iss-code">${escHtml(e.code||'E_?')}</div>
         <div class="iss-msg">${escHtml(e.message)}</div>
-        <div class="iss-pos">${e.line||'?'}:${e.column||'?'}</div>
+        <div class="iss-pos">第 ${e.line||'?'} 行,第 ${e.column||'?'} 列</div>
       </div>`).join('') : '';
     list.innerHTML = header + rows + errList;
   }
@@ -1510,31 +1533,35 @@ function setStatus(text, icon, spin) {
   ie.classList.toggle('spin',!!spin);
 }
 function addError(msg) { S.errors.push({message:msg}); updateBadges(); }
+function $set(id, prop, value) { const e = document.getElementById(id); if (e) e[prop] = value; }
+function $style(id, prop, value) { const e = document.getElementById(id); if (e) e.style[prop] = value; }
+
 function clearAll() {
   S.tokens=[]; S.ast=null; S.trace=[]; S.trace_events=[]; S.quads=[]; S.assembly='';
   S.symbolTable={}; S.errors=[]; S.semantic_errors=[]; S.stats={}; S.parsed=false;
   S.lrStep=0; S.lrPlaying=false; if(S.lrTimer){clearInterval(S.lrTimer);S.lrTimer=null;}
-  document.getElementById('lexer-tbody').innerHTML='';
-  document.getElementById('lexer-code').innerHTML='';
-  document.getElementById('parser-placeholder').style.display='flex';
-  document.getElementById('parser-tree-svg').innerHTML='';
-  document.getElementById('ast-placeholder').style.display='flex';
-  document.getElementById('ast-svg').innerHTML='';
-  document.getElementById('lr-trace').innerHTML='';
-  document.getElementById('lr-callstack').innerHTML='<div class="text-outline text-[12px]">执行分析后查看</div>';
-  document.getElementById('issues-list').innerHTML='<div class="text-outline font-body-sm">暂无错误</div>';
-  document.getElementById('sem-list').innerHTML='<div class="sem-empty">执行 Run All 后查看符号表与作用域信息</div>';
-  document.getElementById('sem-stat-row').innerHTML='';
-  document.getElementById('sem-summary').textContent='';
-  document.getElementById('sem-result-info').textContent='运行后查看';
-  document.getElementById('ir-tbody').innerHTML='';
-  document.getElementById('ir-stat-row').innerHTML='';
-  document.getElementById('ir-count-label').textContent='';
-  document.getElementById('ir-placeholder').style.display='block';
-  document.getElementById('editor-stats').querySelectorAll('span:not(.text-error)').forEach(s=>s.textContent='—');
-  document.getElementById('editor-sym-body').innerHTML='<tr><td colspan="4" class="text-outline py-4 text-center">暂无数据</td></tr>';
-  document.getElementById('editor-output').innerHTML='Ready';
-  document.getElementById('status-bar-info').textContent='';
+  $set('lexer-tbody','innerHTML','');
+  $set('lexer-code','innerHTML','');
+  $style('parser-placeholder','display','flex');
+  $set('parser-tree-text','textContent','');
+  $style('ast-placeholder','display','flex');
+  $set('ast-svg','innerHTML','');
+  $set('lr-trace','innerHTML','');
+  $set('lr-callstack','innerHTML','<div class="text-outline text-[12px]">执行分析后查看</div>');
+  $set('issues-list','innerHTML','<div class="text-outline font-body-sm">暂无错误</div>');
+  $set('sem-list','innerHTML','<div class="sem-empty">执行 Run All 后查看符号表与作用域信息</div>');
+  $set('sem-stat-row','innerHTML','');
+  $set('sem-summary','textContent','');
+  $set('sem-result-info','textContent','运行后查看');
+  $set('ir-tbody','innerHTML','');
+  $set('ir-stat-row','innerHTML','');
+  $set('ir-count-label','textContent','');
+  $style('ir-placeholder','display','block');
+  $set('editor-output','innerHTML','Ready');
+  $set('status-bar-info','textContent','');
+  const es = document.getElementById('editor-stats');
+  if (es) es.querySelectorAll('span:not(.text-error)').forEach(s => s.textContent = '—');
+  $set('editor-sym-body','innerHTML','<tr><td colspan="4" class="text-outline py-4 text-center">暂无数据</td></tr>');
   updateBadges(); setStatus('Cleared','delete_sweep');
 }
 

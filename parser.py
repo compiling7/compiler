@@ -83,11 +83,12 @@ class Parser:
         """
         self._trace_enter("parse_program", "Program → Declaration*")
         declarations = []
+        start_tok = self.current_token()
         while self.current_token().type != TT_EOF:
             decl = self.parse_declaration()
             if decl:
                 declarations.append(decl)
-        result = ProgramNode(declarations)
+        result = ProgramNode(declarations, line=start_tok.line, column=start_tok.column)
         self._trace_exit("parse_program", result)
         return result
 
@@ -101,7 +102,7 @@ class Parser:
     def parse_function_decl(self):
         """FunctionDecl -> fn ID ( ParameterList ) ReturnType? Block"""
         self._trace_enter("parse_function_decl", "FunctionDecl → fn ID (Params?) →Type? Block")
-        self.expect(TT_KEYWORD_FN)
+        fn_tok = self.expect(TT_KEYWORD_FN)
         name_token = self.expect(TT_ID)
         self.expect(TT_LPAREN)
 
@@ -116,7 +117,8 @@ class Parser:
             return_type = self.parse_type()
 
         body = self.parse_block()
-        result = FunctionDeclNode(name_token.value, params, return_type, body)
+        result = FunctionDeclNode(name_token.value, params, return_type, body,
+                                  line=fn_tok.line, column=fn_tok.column)
         self._trace_exit("parse_function_decl", result)
         return result
 
@@ -141,37 +143,42 @@ class Parser:
         """Param -> mut? ID : Type"""
         self._trace_enter("parse_parameter", "Param → mut? ID : Type")
         is_mutable = False
-        if self.current_token().type == TT_KEYWORD_MUT:
+        first_tok = self.current_token()
+        if first_tok.type == TT_KEYWORD_MUT:
             is_mutable = True
             self.advance()
         name_token = self.expect(TT_ID)
         self.expect(TT_COLON)
         param_type = self.parse_type()
-        result = ParamNode(name_token.value, is_mutable, param_type)
+        result = ParamNode(name_token.value, is_mutable, param_type,
+                           line=first_tok.line, column=first_tok.column)
         self._trace_exit("parse_parameter", result)
         return result
 
     def parse_type(self):
         """Type -> i32 | [ Type ; NUM ]"""
         self._trace_enter("parse_type", "Type → i32 | [ Type ; NUM ]")
-        if self.current_token().type == TT_LBRACKET:
+        first_tok = self.current_token()
+        if first_tok.type == TT_LBRACKET:
             self.advance()
             elem_type = self.parse_type()
             self.expect(TT_SEMICOLON)
             size_token = self.expect(TT_NUM)
             self.expect(TT_RBRACKET)
-            result = ArrayTypeNode(elem_type, int(size_token.value))
+            result = ArrayTypeNode(elem_type, int(size_token.value),
+                                   line=first_tok.line, column=first_tok.column)
             self._trace_exit("parse_type", result)
             return result
         type_token = self.expect(TT_KEYWORD_I32)
-        result = TypeNode(type_token.value)
+        result = TypeNode(type_token.value,
+                          line=type_token.line, column=type_token.column)
         self._trace_exit("parse_type", result)
         return result
 
     def parse_block(self):
         """Block -> { Statement* }"""
         self._trace_enter("parse_block", "Block → { Statement* }")
-        self.expect(TT_LBRACE)
+        lb_tok = self.expect(TT_LBRACE)
         statements = []
         while self.current_token().type != TT_RBRACE:
             if self.current_token().type == TT_EOF:
@@ -180,7 +187,7 @@ class Parser:
             if stmt:
                 statements.append(stmt)
         self.expect(TT_RBRACE)
-        result = BlockStmtNode(statements)
+        result = BlockStmtNode(statements, line=lb_tok.line, column=lb_tok.column)
         self._trace_exit("parse_block", result)
         return result
 
@@ -190,7 +197,7 @@ class Parser:
         token = self.current_token()
         if token.type == TT_SEMICOLON:
             self.advance()
-            result = EmptyStmtNode()
+            result = EmptyStmtNode(line=token.line, column=token.column)
             self._trace_exit("parse_statement", result)
             return result
         if token.type == TT_KEYWORD_RETURN:
@@ -224,15 +231,15 @@ class Parser:
     def parse_return_stmt(self):
         """ReturnStmt -> return Expression? ;"""
         self._trace_enter("parse_return_stmt", "ReturnStmt → return Expression? ;")
-        self.expect(TT_KEYWORD_RETURN)
+        ret_tok = self.expect(TT_KEYWORD_RETURN)
         if self.current_token().type == TT_SEMICOLON:
             self.advance()
-            result = ReturnStmtNode(None)
+            result = ReturnStmtNode(None, line=ret_tok.line, column=ret_tok.column)
             self._trace_exit("parse_return_stmt", result)
             return result
         expr = self.parse_expression()
         self.expect(TT_SEMICOLON)
-        result = ReturnStmtNode(expr)
+        result = ReturnStmtNode(expr, line=ret_tok.line, column=ret_tok.column)
         self._trace_exit("parse_return_stmt", result)
         return result
 
@@ -240,7 +247,8 @@ class Parser:
         """VariableDecl -> mut? ID (: Type)?"""
         self._trace_enter("parse_var_decl", "VarDecl → mut? ID (: Type)?")
         is_mutable = False
-        if self.current_token().type == TT_KEYWORD_MUT:
+        first_tok = self.current_token()
+        if first_tok.type == TT_KEYWORD_MUT:
             is_mutable = True
             self.advance()
         name_token = self.expect(TT_ID)
@@ -248,7 +256,7 @@ class Parser:
         if self.current_token().type == TT_COLON:
             self.advance()
             var_type = self.parse_type()
-        result = (name_token.value, is_mutable, var_type)
+        result = (name_token.value, is_mutable, var_type, name_token.line, name_token.column)
         self._trace_exit("parse_var_decl", result)
         return result
 
@@ -256,29 +264,32 @@ class Parser:
         """VarDeclStmt -> let VarDecl (= Expression)? ;"""
         self._trace_enter("parse_var_decl_stmt", "VarDeclStmt → let VarDecl (= Expr)? ;")
         self.expect(TT_KEYWORD_LET)
-        name, is_mutable, var_type = self.parse_var_decl()
+        name, is_mutable, var_type, name_line, name_col = self.parse_var_decl()
         if self.current_token().type == TT_ASSIGN:
             self.advance()
             init_expr = self.parse_expression()
             self.expect(TT_SEMICOLON)
-            result = VarDeclStmtNode(name, is_mutable, var_type, init_expr)
+            result = VarDeclStmtNode(name, is_mutable, var_type, init_expr,
+                                    line=name_line, column=name_col)
             self._trace_exit("parse_var_decl_stmt", result)
             return result
         self.expect(TT_SEMICOLON)
-        result = VarDeclStmtNode(name, is_mutable, var_type, None)
+        result = VarDeclStmtNode(name, is_mutable, var_type, None,
+                                line=name_line, column=name_col)
         self._trace_exit("parse_var_decl_stmt", result)
         return result
 
     def parse_if_stmt(self):
         """IfStmt -> if Expression Block ElsePart?"""
         self._trace_enter("parse_if_stmt", "IfStmt → if Expr Block (else Block)?")
-        self.expect(TT_KEYWORD_IF)
+        if_tok = self.expect(TT_KEYWORD_IF)
         condition = self.parse_expression()
         then_block = self.parse_block()
         else_block = None
         if self.current_token().type == TT_KEYWORD_ELSE:
             else_block = self.parse_else_part()
-        result = IfStmtNode(condition, then_block, else_block)
+        result = IfStmtNode(condition, then_block, else_block,
+                            line=if_tok.line, column=if_tok.column)
         self._trace_exit("parse_if_stmt", result)
         return result
 
@@ -287,13 +298,15 @@ class Parser:
         self._trace_enter("parse_else_part", "ElsePart → else Block | else if Expr Block")
         self.expect(TT_KEYWORD_ELSE)
         if self.current_token().type == TT_KEYWORD_IF:
+            if_tok = self.current_token()  # 'if' 关键字还在当前位置
             self.advance()
             condition = self.parse_expression()
             then_block = self.parse_block()
             else_part = None
             if self.current_token().type == TT_KEYWORD_ELSE:
                 else_part = self.parse_else_part()
-            result = IfStmtNode(condition, then_block, else_part)
+            result = IfStmtNode(condition, then_block, else_part,
+                                line=if_tok.line, column=if_tok.column)
             self._trace_exit("parse_else_part", result)
             return result
         result = self.parse_block()
@@ -303,22 +316,24 @@ class Parser:
     def parse_while_stmt(self):
         """WhileStmt -> while Expression Block"""
         self._trace_enter("parse_while_stmt", "WhileStmt → while Expr Block")
-        self.expect(TT_KEYWORD_WHILE)
+        wh_tok = self.expect(TT_KEYWORD_WHILE)
         condition = self.parse_expression()
         body = self.parse_block()
-        result = WhileStmtNode(condition, body)
+        result = WhileStmtNode(condition, body,
+                               line=wh_tok.line, column=wh_tok.column)
         self._trace_exit("parse_while_stmt", result)
         return result
 
     def parse_for_stmt(self):
         """ForStmt -> for VarDecl in Iterable Block"""
         self._trace_enter("parse_for_stmt", "ForStmt → for VarDecl in Iterable Block")
-        self.expect(TT_KEYWORD_FOR)
-        name, is_mutable, _ = self.parse_var_decl()
+        for_tok = self.expect(TT_KEYWORD_FOR)
+        name, is_mutable, _, _, _ = self.parse_var_decl()
         self.expect(TT_KEYWORD_IN)
         iterable = self.parse_iterable()
         body = self.parse_block()
-        result = ForStmtNode(name, is_mutable, iterable, body)
+        result = ForStmtNode(name, is_mutable, iterable, body,
+                             line=for_tok.line, column=for_tok.column)
         self._trace_exit("parse_for_stmt", result)
         return result
 
@@ -327,9 +342,11 @@ class Parser:
         self._trace_enter("parse_iterable", "Iterable → Expr .. Expr | Expr")
         start = self.parse_expression()
         if self.current_token().type == TT_DOTDOT:
+            dot_tok = self.current_token()
             self.advance()
             end = self.parse_expression()
-            result = RangeNode(start, end)
+            result = RangeNode(start, end,
+                               line=dot_tok.line, column=dot_tok.column)
             self._trace_exit("parse_iterable", result)
             return result
         self._trace_exit("parse_iterable", start)
@@ -342,11 +359,12 @@ class Parser:
         if token.type == TT_ID:
             next_token = self.peek_token()
             if next_token.type == TT_ASSIGN:
-                self.advance()
-                left = LValueNode(token.value)
-                self.advance()  # consume =
+                left = LValueNode(token.value, line=token.line, column=token.column)
+                self.advance()  # 消费 ID
+                self.advance()  # 消费 =
                 value = self.parse_expression()
-                result = AssignStmtNode(left, value)
+                result = AssignStmtNode(left, value,
+                                        line=token.line, column=token.column)
                 self._trace_exit("try_parse_expression", result)
                 return result
         result = self.parse_expression()
@@ -358,10 +376,11 @@ class Parser:
         self._trace_enter("parse_expression", "Expr → AdditiveExpr (CompareOp AdditiveExpr)*")
         left = self.parse_additive_expr()
         while self.current_token().type in [TT_LT, TT_LE, TT_GT, TT_GE, TT_EQ, TT_NE]:
-            op = self.current_token().value
+            op_tok = self.current_token()
             self.advance()
             right = self.parse_additive_expr()
-            left = BinaryExprNode(op, left, right)
+            left = BinaryExprNode(op_tok.value, left, right,
+                                  line=op_tok.line, column=op_tok.column)
         self._trace_exit("parse_expression", left)
         return left
 
@@ -370,10 +389,11 @@ class Parser:
         self._trace_enter("parse_additive_expr", "AdditiveExpr → Term ((+|-) Term)*")
         left = self.parse_term()
         while self.current_token().type in [TT_PLUS, TT_MINUS]:
-            op = self.current_token().value
+            op_tok = self.current_token()
             self.advance()
             right = self.parse_term()
-            left = BinaryExprNode(op, left, right)
+            left = BinaryExprNode(op_tok.value, left, right,
+                                  line=op_tok.line, column=op_tok.column)
         self._trace_exit("parse_additive_expr", left)
         return left
 
@@ -382,10 +402,11 @@ class Parser:
         self._trace_enter("parse_term", "Term → Factor ((*|/) Factor)*")
         left = self.parse_factor()
         while self.current_token().type in [TT_MUL, TT_DIV]:
-            op = self.current_token().value
+            op_tok = self.current_token()
             self.advance()
             right = self.parse_factor()
-            left = BinaryExprNode(op, left, right)
+            left = BinaryExprNode(op_tok.value, left, right,
+                                  line=op_tok.line, column=op_tok.column)
         self._trace_exit("parse_term", left)
         return left
 
@@ -395,7 +416,8 @@ class Parser:
         token = self.current_token()
         if token.type == TT_NUM:
             self.advance()
-            result = NumberLiteralNode(token.value)
+            result = NumberLiteralNode(token.value,
+                                       line=token.line, column=token.column)
             self._trace_exit("parse_factor", result)
             return result
         if token.type == TT_LPAREN:
@@ -407,7 +429,8 @@ class Parser:
         if token.type == TT_MINUS:
             self.advance()
             factor = self.parse_factor()
-            result = UnaryMinusNode(factor)
+            result = UnaryMinusNode(factor,
+                                    line=token.line, column=token.column)
             self._trace_exit("parse_factor", result)
             return result
         if token.type == TT_ID or token.type == TT_LBRACKET:
@@ -428,21 +451,24 @@ class Parser:
             self.advance()
             args = self.parse_argument_list()
             self.expect(TT_RPAREN)
-            result = FuncCallNode(name_token.value, args)
+            result = FuncCallNode(name_token.value, args,
+                                  line=name_token.line, column=name_token.column)
         else:
-            result = LValueNode(name_token.value)
+            result = LValueNode(name_token.value,
+                                line=name_token.line, column=name_token.column)
         while self.current_token().type == TT_LBRACKET:
             self.advance()
             index = self.parse_expression()
             self.expect(TT_RBRACKET)
-            result = ArrayAccessNode(result, index)
+            result = ArrayAccessNode(result, index,
+                                     line=name_token.line, column=name_token.column)
         self._trace_exit("parse_accessor", result)
         return result
 
     def parse_array_literal(self):
         """ArrayLiteral -> [ ElementList ]"""
         self._trace_enter("parse_array_literal", "ArrayLiteral → [ Expr (, Expr)* ]")
-        self.expect(TT_LBRACKET)
+        lb_tok = self.expect(TT_LBRACKET)
         elements = []
         if self.current_token().type != TT_RBRACKET:
             expr = self.parse_expression()
@@ -454,7 +480,8 @@ class Parser:
                 expr = self.parse_expression()
                 elements.append(expr)
         self.expect(TT_RBRACKET)
-        result = ArrayLiteralNode(elements)
+        result = ArrayLiteralNode(elements,
+                                  line=lb_tok.line, column=lb_tok.column)
         self._trace_exit("parse_array_literal", result)
         return result
 
