@@ -23,18 +23,86 @@ from compiler_ast import *
 
 
 # --------------------------------------------------------------------------- #
-# Quadruple                                                                    #
+# IROperand — typed operand carrying a kind tag                                #
+# --------------------------------------------------------------------------- #
+
+class IROperand:
+    """A typed operand in the intermediate representation.
+
+    Each operand carries a *value* and a *kind* tag that tells the backend
+    what the value represents (a temporary, a label, a constant, a variable,
+    …) so it can handle each kind without string-shape heuristics.
+    """
+    __slots__ = ("value", "kind")
+
+    def __init__(self, value, kind: str = "var"):
+        self.value = str(value) if value is not None else "_"
+        self.kind = kind          # "var" | "temp" | "label" | "const" | "func"
+
+    # -- query helpers (used by the asm backend) --
+
+    @property
+    def is_temp(self) -> bool:
+        return self.kind == "temp"
+
+    @property
+    def is_label(self) -> bool:
+        return self.kind == "label"
+
+    @property
+    def is_const(self) -> bool:
+        return self.kind == "const"
+
+    # -- display / serialisation --
+
+    def __str__(self):
+        return self.value
+
+    def __repr__(self):
+        return f"<{self.kind}:{self.value}>"
+
+    def to_dict(self):
+        return {"value": self.value, "kind": self.kind}
+
+
+# --------------------------------------------------------------------------- #
+# Quadruple — single IR instruction                                           #
 # --------------------------------------------------------------------------- #
 
 class Quadruple:
-    """A single IR instruction: ``(op, arg1, arg2, result)``."""
+    """A single IR instruction: ``(op, arg1, arg2, result)``.
+
+    Every operand slot is stored as an :class:`IROperand` (or ``None``).
+    Raw strings, integers, etc. are automatically *lifted* into
+    ``IROperand`` on construction so callers can keep writing
+    ``_emit("+", "x", 1, t)`` without explicit wrapping.
+    """
     __slots__ = ("op", "arg1", "arg2", "result")
 
     def __init__(self, op: str, arg1=None, arg2=None, result=None):
         self.op = op
-        self.arg1 = arg1
-        self.arg2 = arg2
-        self.result = result
+        self.arg1 = self._lift(arg1)
+        self.arg2 = self._lift(arg2)
+        self.result = self._lift(result)
+
+    @staticmethod
+    def _lift(val):
+        """Coerce a raw value into an :class:`IROperand` when needed."""
+        if val is None or isinstance(val, IROperand):
+            return val
+        if isinstance(val, (int, float)):
+            return IROperand(str(int(val)), kind="const")
+        if isinstance(val, str):
+            # Infer kind from the string shape so most call sites don't
+            # have to construct ``IROperand`` explicitly.
+            if val.startswith("t") and len(val) > 1 and val[1:].isdigit():
+                return IROperand(val, kind="temp")
+            if val.startswith("L"):
+                return IROperand(val, kind="label")
+            if val.lstrip("-").isdigit():
+                return IROperand(val, kind="const")
+            return IROperand(val, kind="var")
+        raise TypeError(f"Cannot lift {type(val).__name__} to IROperand")
 
     def __str__(self):
         def fmt(x):
@@ -45,11 +113,13 @@ class Quadruple:
         return self.__str__()
 
     def to_dict(self):
+        """JSON-safe dict — returns plain strings so the front-end
+        sees exactly the same shape as before."""
         return {
             "op": self.op,
-            "arg1": self.arg1,
-            "arg2": self.arg2,
-            "result": self.result,
+            "arg1": str(self.arg1) if self.arg1 is not None else None,
+            "arg2": str(self.arg2) if self.arg2 is not None else None,
+            "result": str(self.result) if self.result is not None else None,
         }
 
 
@@ -68,6 +138,11 @@ class IRGenerator:
         # e.g. "x" -> "x", but for arrays "a" -> "a[8]" etc.
         self._current_fn: Optional[str] = None
         self._fn_table: dict[str, FunctionDeclNode] = {}
+        # Stacks for break/continue label targets.
+        # _loop_exit_labels  — where ``break`` jumps  (innermost is top)
+        # _loop_repeat_labels — where ``continue`` jumps (innermost is top)
+        self._loop_exit_labels: List[IROperand] = []
+        self._loop_repeat_labels: List[IROperand] = []
 
     # ---- public API ----
 
@@ -77,6 +152,8 @@ class IRGenerator:
         self._label_counter = 0
         self._var_slots = {}
         self._fn_table = {}
+        self._loop_exit_labels = []
+        self._loop_repeat_labels = []
         if not isinstance(program, ProgramNode):
             return self.quads
         # Pre-collect function declarations so the expression visitor can
@@ -94,13 +171,13 @@ class IRGenerator:
 
     # ---- helpers ----
 
-    def _temp(self) -> str:
+    def _temp(self) -> IROperand:
         self._temp_counter += 1
-        return f"t{self._temp_counter - 1}"
+        return IROperand(f"t{self._temp_counter - 1}", kind="temp")
 
-    def _label(self, hint: str = "L") -> str:
+    def _label(self, hint: str = "L") -> IROperand:
         self._label_counter += 1
-        return f"{hint}{self._label_counter - 1}"
+        return IROperand(f"{hint}{self._label_counter - 1}", kind="label")
 
     def _emit(self, op: str, a1=None, a2=None, r=None) -> Quadruple:
         q = Quadruple(op, a1, a2, r)
@@ -142,6 +219,12 @@ class IRGenerator:
             return
         if isinstance(node, ReturnStmtNode):
             self._return(node)
+            return
+        if isinstance(node, BreakStmtNode):
+            self._break_stmt(node)
+            return
+        if isinstance(node, ContinueStmtNode):
+            self._continue_stmt(node)
             return
         if isinstance(node, IfStmtNode):
             self._if(node)
@@ -216,6 +299,17 @@ class IRGenerator:
         else:
             self._emit("return", None, None, self._current_fn)
 
+    def _break_stmt(self, node: BreakStmtNode) -> None:
+        if not self._loop_exit_labels:
+            # Semantic analysis should have caught this.
+            return
+        self._emit("goto", None, None, self._loop_exit_labels[-1])
+
+    def _continue_stmt(self, node: ContinueStmtNode) -> None:
+        if not self._loop_repeat_labels:
+            return
+        self._emit("goto", None, None, self._loop_repeat_labels[-1])
+
     def _if(self, node: IfStmtNode) -> None:
         cond = self._expr(node.condition)
         else_lab = self._label("L_else_")
@@ -236,42 +330,50 @@ class IRGenerator:
     def _while(self, node: WhileStmtNode) -> None:
         start = self._label("L_while_")
         end   = self._label("L_end_")
+        self._loop_exit_labels.append(end)
+        self._loop_repeat_labels.append(start)   # continue → re-check condition
         self._emit("label", None, None, start)
         cond = self._expr(node.condition)
         self._emit("if_false", cond, None, end)
         self._blk(node.body)
         self._emit("goto", None, None, start)
         self._emit("label", None, None, end)
+        self._loop_repeat_labels.pop()
+        self._loop_exit_labels.pop()
 
     def _for(self, node: ForStmtNode) -> None:
         """for x in a..b { body }
         IR:
             x = a
-            L0: t = x < b
-                if_false t goto L1
-                body
-                x = x + 1
-                goto L0
-            L1:
+            L_for: t = x < b
+                   if_false t goto L_end
+                   body
+            L_inc: x = x + 1        ← continue jumps here
+                   goto L_for
+            L_end:                   ← break jumps here
         """
         if isinstance(node.iterable, RangeNode):
             start_val = self._expr(node.iterable.start)
             end_val   = self._expr(node.iterable.end)
-            # No `alloc` — the for-loop variable's type (i32) is fixed by
-            # the language; the first `assign` below reserves its slot.
             self._emit("assign", start_val, None, node.var_name)
             loop_start = self._label("L_for_")
+            loop_inc   = self._label("L_inc_")
             loop_end   = self._label("L_end_")
+            self._loop_exit_labels.append(loop_end)
+            self._loop_repeat_labels.append(loop_inc)
             self._emit("label", None, None, loop_start)
             t = self._temp()
             self._emit("<", node.var_name, end_val, t)
             self._emit("if_false", t, None, loop_end)
             self._blk(node.body)
+            self._emit("label", None, None, loop_inc)
             t2 = self._temp()
             self._emit("+", node.var_name, "1", t2)
             self._emit("assign", t2, None, node.var_name)
             self._emit("goto", None, None, loop_start)
             self._emit("label", None, None, loop_end)
+            self._loop_repeat_labels.pop()
+            self._loop_exit_labels.pop()
         else:
             # Plain expression iterable (e.g. an array) — degenerate path.
             self._expr(node.iterable)
@@ -298,19 +400,20 @@ class IRGenerator:
 
     # ---- expressions ----
 
-    def _expr(self, node) -> str:
-        """Evaluate expression, return the name holding its value.
+    def _expr(self, node) -> IROperand:
+        """Evaluate an expression and return an :class:`IROperand`
+        holding its value.
 
-        Number literals are returned as the literal string itself so that
-        downstream operators can fold them in directly (e.g. `(+, x, 20, t)`
-        instead of `(=, 20, _, t1); (+, x, t1, t2)`).
+        Number literals are returned as a *const* operand so that
+        downstream operators can fold them in directly (e.g.
+        ``(+, x, 20, t)`` instead of ``(=, 20, _, t1); (+, x, t1, t2)``).
         """
         if node is None:
             return self._temp()  # unreachable for well-formed AST
         if isinstance(node, NumberLiteralNode):
-            return str(node.value)
+            return IROperand(str(node.value), kind="const")
         if isinstance(node, LValueNode):
-            return node.name
+            return IROperand(node.name, kind="var")
         if isinstance(node, UnaryMinusNode):
             v = self._expr(node.expr)
             t = self._temp()

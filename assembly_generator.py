@@ -1,6 +1,9 @@
 """x86-64 NASM assembly generator from IR quadruples."""
 
 
+from ir_generator import IROperand
+
+
 class AssemblyGenerator:
     """Consumes IR quadruples and emits NASM x86-64 assembly.
 
@@ -21,34 +24,62 @@ class AssemblyGenerator:
     # ---- helpers ----
 
     def _is_label(self, name):
+        if isinstance(name, IROperand):
+            return name.is_label
         return name is None or name == "_" or (isinstance(name, str) and name.startswith("L"))
 
     def _is_num(self, s):
+        if isinstance(s, IROperand):
+            return s.is_const
         try:
             int(s)
             return True
         except (ValueError, TypeError):
             return False
 
-    def _alloc(self, name):
-        if name is None or self._is_label(name) or self._is_num(name):
+    def _alloc(self, op):
+        if op is None:
             return
-        if name not in self.offsets:
+        if isinstance(op, IROperand):
+            if op.is_label or op.is_const:
+                return
+            key = op.value
+        else:
+            if self._is_label(op) or self._is_num(op):
+                return
+            key = op
+        if key not in self.offsets:
             self.stack_used += 8
-            self.offsets[name] = -self.stack_used
+            self.offsets[key] = -self.stack_used
 
-    def _op(self, name):
-        """Convert name -> NASM operand (constant or [rbp+offset])."""
-        if name is None or name == "_":
+    def _op(self, opnd):
+        """Convert an IR operand (``IROperand`` or plain string) into a
+        NASM operand — either a numeric constant, a label name, or
+        ``[rbp+offset]`` for stack-allocated variables/temps."""
+        if opnd is None:
             return None
-        if self._is_label(name):
-            return name
-        if self._is_num(name):
-            return name
-        off = self.offsets.get(name)
+        # Fast path for IROperand — trust the kind tag.
+        if isinstance(opnd, IROperand):
+            if opnd.is_label:
+                return opnd.value
+            if opnd.is_const:
+                return opnd.value
+            # Variable, temp, or function name — look up stack offset.
+            off = self.offsets.get(opnd.value)
+            if off is not None:
+                return f"[rbp{off}]"
+            return opnd.value   # e.g. a function name used in ``call``
+        # Legacy path for plain strings.
+        if opnd == "_":
+            return None
+        if self._is_label(opnd):
+            return opnd
+        if self._is_num(opnd):
+            return opnd
+        off = self.offsets.get(opnd)
         if off is not None:
             return f"[rbp{off}]"
-        return name  # fallback (e.g. function name for call)
+        return opnd
 
     def _emit(self, text, indent=True):
         if indent and text:
@@ -186,7 +217,7 @@ class AssemblyGenerator:
             self._pending_args.append(q.arg1)
 
         elif op == "call":
-            n = int(q.arg2) if q.arg2 else 0
+            n = int(q.arg2.value) if q.arg2 else 0
             args = self._pending_args[-n:] if n > 0 else []
             self._pending_args = []
             # System V AMD64 ABI: rdi, rsi, rdx, rcx, r8, r9

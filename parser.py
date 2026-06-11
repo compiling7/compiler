@@ -220,6 +220,14 @@ class Parser:
             result = self.parse_for_stmt()
             self._trace_exit("parse_statement", result)
             return result
+        if token.type == TT_KEYWORD_BREAK:
+            result = self.parse_break_stmt()
+            self._trace_exit("parse_statement", result)
+            return result
+        if token.type == TT_KEYWORD_CONTINUE:
+            result = self.parse_continue_stmt()
+            self._trace_exit("parse_statement", result)
+            return result
         expr = self.try_parse_expression()
         if expr:
             self.expect(TT_SEMICOLON)
@@ -241,6 +249,24 @@ class Parser:
         self.expect(TT_SEMICOLON)
         result = ReturnStmtNode(expr, line=ret_tok.line, column=ret_tok.column)
         self._trace_exit("parse_return_stmt", result)
+        return result
+
+    def parse_break_stmt(self):
+        """BreakStmt -> break ;"""
+        self._trace_enter("parse_break_stmt", "BreakStmt → break ;")
+        tok = self.expect(TT_KEYWORD_BREAK)
+        self.expect(TT_SEMICOLON)
+        result = BreakStmtNode(line=tok.line, column=tok.column)
+        self._trace_exit("parse_break_stmt", result)
+        return result
+
+    def parse_continue_stmt(self):
+        """ContinueStmt -> continue ;"""
+        self._trace_enter("parse_continue_stmt", "ContinueStmt → continue ;")
+        tok = self.expect(TT_KEYWORD_CONTINUE)
+        self.expect(TT_SEMICOLON)
+        result = ContinueStmtNode(line=tok.line, column=tok.column)
+        self._trace_exit("parse_continue_stmt", result)
         return result
 
     def parse_var_decl(self):

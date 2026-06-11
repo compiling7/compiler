@@ -307,6 +307,18 @@ class SemanticAnalyzer:
             self._visit_return(node)
             return
 
+        if isinstance(node, BreakStmtNode):
+            if self._loop_depth <= 0:
+                self._err(E_BREAK_OUTSIDE,
+                          "break 语句出现在循环体外", node)
+            return
+
+        if isinstance(node, ContinueStmtNode):
+            if self._loop_depth <= 0:
+                self._err(E_CONTINUE_OUTSIDE,
+                          "continue 语句出现在循环体外", node)
+            return
+
         if isinstance(node, IfStmtNode):
             cond_t = self._visit_expr(node.condition)
             if cond_t is not None and cond_t not in (TYPE_I32, TYPE_BOOL):

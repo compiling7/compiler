@@ -305,12 +305,7 @@ def _trace_event_to_dict(e):
 
 
 def _quad_to_dict(q):
-    return {
-        "op": q.op,
-        "arg1": q.arg1,
-        "arg2": q.arg2,
-        "result": q.result,
-    }
+    return q.to_dict()
 
 
 def _semantic_error_to_dict(err):

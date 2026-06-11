@@ -110,6 +110,22 @@ class ReturnStmtNode(ASTNode):
         self.expr = expr  # 返回表达式 ExprNode 或 None
 
 
+class BreakStmtNode(ASTNode):
+    """break 语句节点"""
+    node_name = "BreakStmt"
+
+    def __init__(self, line: int = 0, column: int = 0):
+        super().__init__(line, column)
+
+
+class ContinueStmtNode(ASTNode):
+    """continue 语句节点"""
+    node_name = "ContinueStmt"
+
+    def __init__(self, line: int = 0, column: int = 0):
+        super().__init__(line, column)
+
+
 class VarDeclStmtNode(ASTNode):
     """变量声明语句节点"""
     node_name = "VarDeclStmt"
