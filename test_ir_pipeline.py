@@ -111,17 +111,19 @@ print("=" * 60)
 
 ALL_IR_OPS = {
     "program", "endprogram",
-    "func", "endfunc", "param", "arg", "call", "return",
+    "func", "endfunc", "receive_param", "push_arg", "call",
+    "return_val", "return_void",
     "assign",
     "label", "goto", "if_false",
     "+", "-", "*", "/",
     "<", "<=", ">", ">=", "==", "!=",
     "neg",
+    "array_get", "array_set",
 }
 
 # Ops that ARE emitted by IRGenerator but the current parser cannot
 # produce the required AST patterns (pre-existing limitations).
-PARSER_UNREACHABLE_OPS = {"=", "array_get", "array_set", "array_lit"}
+PARSER_UNREACHABLE_OPS = {"=", "array_lit"}
 
 test_sources = {}
 
@@ -312,16 +314,13 @@ else:
     print(f"  [FAIL] OP array_get  (not emitted even directly)")
 
 def make_ir_for_array_lit():
-    """Simulate: [1, 2, 3]  — requires array_lit op."""
+    """Array literals are now lowered to ``array_set`` sequences."""
     gen = IRGenerator()
     gen._emit("program")
     gen._emit("func", "test_lit")
     gen._emit("assign", "arr", None, "a")
-    # array_lit via _expr with ArrayLiteralNode
     arr_node = ArrayLiteralNode([
-        NumberLiteralNode(1),
-        NumberLiteralNode(2),
-        NumberLiteralNode(3),
+        NumberLiteralNode(1), NumberLiteralNode(2), NumberLiteralNode(3),
     ])
     result = gen._expr(arr_node)
     gen._emit("assign", result, None, "tmp")
@@ -331,12 +330,14 @@ def make_ir_for_array_lit():
 
 lit_quads = make_ir_for_array_lit()
 has_array_lit = any(q.op == "array_lit" for q in lit_quads)
-if has_array_lit:
+has_array_set = any(q.op == "array_set" for q in lit_quads)
+# array_lit is intentionally lowered — should NOT appear
+if not has_array_lit and has_array_set:
     PASS += 1
-    print(f"  [OK] OP array_lit  (emitted directly)")
+    print(f"  [OK] OP array_lit lowered to array_set (correct)")
 else:
     FAIL += 1
-    print(f"  [FAIL] OP array_lit  (not emitted even directly)")
+    print(f"  [FAIL] array_lit={has_array_lit}, array_set={has_array_set}")
 
 def make_ir_for_eq():
     """The `=` op is emitted for materialised inner address in

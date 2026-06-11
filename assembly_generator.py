@@ -3,6 +3,9 @@
 
 from ir_generator import IROperand
 
+# Fallback element count when array size cannot be determined statically.
+_FALLBACK_ARRAY_ELEMS = 4
+
 
 class AssemblyGenerator:
     """Consumes IR quadruples and emits NASM x86-64 assembly.
@@ -37,7 +40,15 @@ class AssemblyGenerator:
         except (ValueError, TypeError):
             return False
 
-    def _alloc(self, op):
+    def _alloc(self, op, elem_count=1):
+        """Reserve *elem_count* x 8 bytes on the stack for *op*.
+
+        For a scalar (``elem_count == 1``) the single slot is at the
+        current stack bottom.  For an array the *base* (``a[0]``) is
+        placed at the *top* of the N‑slot block so that ``a[k]``
+        resides at ``base - k·8`` — the block grows downward from
+        the base and stays within the reserved stack space.
+        """
         if op is None:
             return
         if isinstance(op, IROperand):
@@ -49,8 +60,13 @@ class AssemblyGenerator:
                 return
             key = op
         if key not in self.offsets:
-            self.stack_used += 8
-            self.offsets[key] = -self.stack_used
+            n = max(1, elem_count)
+            self.stack_used += n * 8
+            if n > 1:
+                # Array: base sits atop the N‑slot block.
+                self.offsets[key] = -(self.stack_used - (n - 1) * 8)
+            else:
+                self.offsets[key] = -self.stack_used
 
     def _op(self, opnd):
         """Convert an IR operand (``IROperand`` or plain string) into a
@@ -58,18 +74,15 @@ class AssemblyGenerator:
         ``[rbp+offset]`` for stack-allocated variables/temps."""
         if opnd is None:
             return None
-        # Fast path for IROperand — trust the kind tag.
         if isinstance(opnd, IROperand):
             if opnd.is_label:
                 return opnd.value
             if opnd.is_const:
                 return opnd.value
-            # Variable, temp, or function name — look up stack offset.
             off = self.offsets.get(opnd.value)
             if off is not None:
                 return f"[rbp{off}]"
-            return opnd.value   # e.g. a function name used in ``call``
-        # Legacy path for plain strings.
+            return opnd.value
         if opnd == "_":
             return None
         if self._is_label(opnd):
@@ -87,13 +100,51 @@ class AssemblyGenerator:
         else:
             self.lines.append(text if text else "")
 
+    def _raw_offset(self, opnd):
+        """Return the raw numeric offset of *opnd*, or ``None``.
+
+        Unlike ``_op()`` which returns ``[rbp-24]``, this returns
+        ``-24`` so callers can do arithmetic on the offset itself.
+        """
+        if opnd is None:
+            return None
+        if isinstance(opnd, IROperand):
+            key = opnd.value
+        else:
+            key = str(opnd)
+        off = self.offsets.get(key)
+        if off is None:
+            return None
+        return off
+
     # ---- main entry ----
 
     def generate(self):
-        # Pass 1: collect stack vars
+        # Pass 0a: scan for array element counts from ``param`` type info
+        array_counts = self._scan_array_sizes()
+
+        # Pass 0b: also flag names used as local array bases (no param type).
+        # Without this they'd be allocated as 1-element scalars and array
+        # slots would overlap with subsequent variables.
+        for q in self.quads:
+            if q.op in ("array_set", "array_get") and q.arg1 is not None:
+                key = q.arg1.value if isinstance(q.arg1, IROperand) else str(q.arg1)
+                if key not in array_counts:
+                    array_counts[key] = _FALLBACK_ARRAY_ELEMS
+
+        # Pass 1: collect stack vars, using element counts for arrays
         for q in self.quads:
             for a in (q.arg1, q.arg2, q.result):
-                self._alloc(a)
+                if a is None:
+                    continue
+                if isinstance(a, IROperand):
+                    key = a.value
+                else:
+                    if self._is_label(a) or self._is_num(a):
+                        continue
+                    key = a
+                cnt = array_counts.get(key, 1)
+                self._alloc(a, cnt)
 
         # Pass 2: emit
         self._emit("default rel", indent=False)
@@ -103,6 +154,22 @@ class AssemblyGenerator:
         for q in self.quads:
             self._emit_quad(q)
         return "\n".join(self.lines)
+
+    def _scan_array_sizes(self):
+        """Extract array-element counts from ``receive_param`` type info.
+
+        Returns ``{name: element_count}``.
+        """
+        counts = {}
+        for q in self.quads:
+            if q.op == "receive_param" and q.result is not None:
+                raw = str(q.result)
+                if raw.startswith("[") and ";" in raw:
+                    parts = raw.split(";", 1)
+                    cnt = parts[1].rstrip("]")
+                    if cnt.isdigit():
+                        counts[str(q.arg1)] = int(cnt)
+        return counts
 
     # ---- quad handlers ----
 
@@ -117,7 +184,7 @@ class AssemblyGenerator:
             if self.stack_used > 0:
                 self._emit(f"sub rsp, {self.stack_used}")
 
-        elif op == "param":
+        elif op == "receive_param":
             regs = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
             dst = self._op(q.arg1)
             if dst and self._param_idx < len(regs):
@@ -137,9 +204,46 @@ class AssemblyGenerator:
             pass
 
         elif op == "array_lit":
-            # Lowered to a series of stack stores; nothing to emit at the
-            # assembly layer for this placeholder.
+            # Lowered to individual ``array_set`` quads in the IR generator.
             pass
+
+        elif op == "array_get":
+            # (array_get, arr, idx, result)   →  load arr[idx]
+            base_off = self._raw_offset(q.arg1)
+            if base_off is None:
+                return
+            idx_val = self._op(q.arg2)
+            dst_val = self._op(q.result)
+            if dst_val is None:
+                return
+            if self._is_num(idx_val):
+                idx = int(str(idx_val))
+                # Array elements grow downward: a[k] at base_off - k*8
+                self._emit(f"mov rax, [rbp{base_off - idx * 8}]")
+            else:
+                self._emit(f"mov rcx, {idx_val}")
+                self._emit("neg rcx")
+                self._emit(f"mov rax, [rbp{base_off} + rcx*8]")
+            self._emit(f"mov {dst_val}, rax")
+
+        elif op == "array_set":
+            # (array_set, arr, idx, val)   →  store arr[idx] = val
+            base_off = self._raw_offset(q.arg1)
+            if base_off is None:
+                return
+            idx_val = self._op(q.arg2)
+            val_op = self._op(q.result)
+            if val_op is None:
+                return
+            if self._is_num(idx_val):
+                idx = int(str(idx_val))
+                self._emit(f"mov rax, {val_op}")
+                self._emit(f"mov [rbp{base_off - idx * 8}], rax")
+            else:
+                self._emit(f"mov rcx, {idx_val}")
+                self._emit("neg rcx")
+                self._emit(f"mov rax, {val_op}")
+                self._emit(f"mov [rbp{base_off} + rcx*8], rax")
 
         elif op == "=":
             dst = self._op(q.result)
@@ -155,10 +259,13 @@ class AssemblyGenerator:
                 self._emit(f"mov rax, {src}")
                 self._emit(f"mov {dst}, rax")
 
-        elif op == "return":
+        elif op == "return_val":
             if q.arg1 is not None:
                 src = self._op(q.arg1)
                 self._emit(f"mov rax, {src}")
+            self._emit(f"jmp .ret_{self.current_fn}")
+
+        elif op == "return_void":
             self._emit(f"jmp .ret_{self.current_fn}")
 
         # Binary arithmetic
@@ -213,7 +320,7 @@ class AssemblyGenerator:
             self._emit(f"mov {dst}, rax")
 
         # Function call
-        elif op == "arg":
+        elif op == "push_arg":
             self._pending_args.append(q.arg1)
 
         elif op == "call":

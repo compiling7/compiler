@@ -9,7 +9,8 @@ Arithmetic: ``+  -  *  /``        — i32 binary ops
 Comparison: ``<  <=  >  >=  ==  !=`` — return i32 (0/1)
 Logical:    ``&&  ||  !``          — i32 logical ops
 Control:    ``if_false``, ``goto``, ``label``
-Functions:  ``func``, ``param``, ``arg``, ``call``, ``return``, ``endfunc``
+Functions:  ``func``, ``receive_param``, ``push_arg``, ``call``,
+            ``return_val``, ``return_void``, ``endfunc``
 Data:       ``=`` (constant / copy), ``assign`` (variable assignment),
             ``alloc`` (variable slot reservation), ``array_get``,
             ``array_set``, ``array_lit``.
@@ -188,14 +189,16 @@ class IRGenerator:
 
     def _fn(self, node: FunctionDeclNode) -> None:
         self._current_fn = node.name
-        self._emit("func", node.name)
-        # Parameter slots — we lower to local copies.
+        ret_t = type_of(node.return_type) or "void"
+        self._emit("func", node.name, len(node.params), ret_t)
         for p in node.params:
-            self._emit("param", p.name, type_of(p.param_type))
+            # Store array type info in result so backend can allocate
+            # the right number of stack slots for array parameters.
+            ptype = type_of(p.param_type) or ""
+            array_info = ptype if (ptype.startswith("[") and ";" in ptype) else None
+            self._emit("receive_param", p.name, None, array_info)
         if node.body is not None:
             self._blk(node.body)
-        # Ensure the function has a return epilogue even if user code
-        # didn't end with a return (avoids fall-through).
         self._emit("endfunc", node.name)
         self._current_fn = None
 
@@ -266,19 +269,20 @@ class IRGenerator:
 
     def _var_decl(self, node: VarDeclStmtNode) -> None:
         # `let x: i32;`              →  (no quad — slot reserved on first use)
-        # `let x: i32 = 10;`         →  (assign, 10, _, x)              ← 一行
-        # `let x: i32 = a + b;`      →  (+, a, b, tN)
-        #                               (assign, tN, _, x)
-        # No `alloc` is emitted: the variable's type comes from the let
-        # binding (known to the back-end from the symbol table), and a
-        # bare declaration needs no IR — the slot is allocated lazily on
-        # first assignment. Constant initializers collapse to one quad.
+        # `let x: i32 = 10;`         →  (assign, 10, _, x)
+        # `let a:[i32;3] = [1,2,3];` →  (array_set, a, 0, 1), (array_set, a, 1, 2), …
         if node.init_expr is None:
             return
 
         if isinstance(node.init_expr, NumberLiteralNode):
-            # Constant initialization: one `assign` quad, no temp.
             self._emit("assign", str(node.init_expr.value), None, node.name)
+            return
+
+        if isinstance(node.init_expr, ArrayLiteralNode):
+            # Initialise each element individually — no intermediate temp.
+            for i, elem in enumerate(node.init_expr.elements):
+                val = self._expr(elem)
+                self._emit("array_set", node.name, str(i), val)
             return
 
         # General expression initializer — fold the value into a temp,
@@ -289,6 +293,12 @@ class IRGenerator:
     def _assign(self, node: AssignStmtNode) -> None:
         # target must be an l-value (parser guarantees that)
         target = self._lvalue_target(node.left)
+        # Array-literal RHS → emit one ``array_set`` per element.
+        if isinstance(node.value, ArrayLiteralNode):
+            for i, elem in enumerate(node.value.elements):
+                val = self._expr(elem)
+                self._emit("array_set", target["name"], str(i), val)
+            return
         val = self._expr(node.value)
         if target["kind"] == "var":
             self._emit("assign", val, None, target["name"])
@@ -298,9 +308,9 @@ class IRGenerator:
     def _return(self, node: ReturnStmtNode) -> None:
         if node.expr is not None:
             val = self._expr(node.expr)
-            self._emit("return", val, None, self._current_fn)
+            self._emit("return_val", val, None, None)
         else:
-            self._emit("return", None, None, self._current_fn)
+            self._emit("return_void", None, None, None)
 
     def _break_stmt(self, node: BreakStmtNode) -> None:
         if not self._loop_exit_labels:
@@ -450,30 +460,29 @@ class IRGenerator:
             self._emit(node.op, left, right, t)
             return t
         if isinstance(node, FuncCallNode):
-            # Look up whether the function actually returns a value.
             decl = self._fn_table.get(node.name)
             is_void = decl is not None and decl.return_type is None
             for a in node.args:
                 v = self._expr(a)
-                self._emit("arg", v, None, None)
+                self._emit("push_arg", v, None, None)
+            n_args = IROperand(str(len(node.args)), kind="const")
             if is_void:
-                # Used as a value but the function has no return — emit
-                # the call for side-effects but no result temp.
-                self._emit("call", node.name, str(len(node.args)), None)
+                self._emit("call", node.name, n_args, None)
                 t = self._temp()
                 self._emit("=", "0", None, t)
                 return t
             t = self._temp()
-            self._emit("call", node.name, str(len(node.args)), t)
+            self._emit("call", node.name, n_args, t)
             return t
         if isinstance(node, ArrayLiteralNode):
-            # Build the array in a synthetic temp: emit a sequence of writes
-            # to fresh slots? For simplicity we emit an "array_lit" pseudo-op
-            # carrying element names; the back-end can lower to allocation
-            # + per-index stores.
-            elem_names = [self._expr(e) for e in node.elements]
+            # Fallback when an array literal appears in an expression context
+            # (the common ``let x = [1, 2];`` and ``c = [1,2,3];`` paths
+            # are handled earlier in ``_var_decl`` / ``_assign``).
+            elem_ops = [self._expr(e) for e in node.elements]
             t = self._temp()
-            self._emit("array_lit", ",".join(str(v) for v in elem_names), str(len(elem_names)), t)
+            self._emit("=", "0", None, t)
+            for i, eop in enumerate(elem_ops):
+                self._emit("array_set", t, str(i), eop)
             return t
         if isinstance(node, ArrayAccessNode):
             base = self._expr(node.array)
@@ -495,8 +504,9 @@ class IRGenerator:
         """Emit a function call that is used as a statement (no result)."""
         for a in node.args:
             v = self._expr(a)
-            self._emit("arg", v, None, None)
-        self._emit("call", node.name, str(len(node.args)), None)
+            self._emit("push_arg", v, None, None)
+        n_args = IROperand(str(len(node.args)), kind="const")
+        self._emit("call", node.name, n_args, None)
 
 
 # --------------------------------------------------------------------------- #

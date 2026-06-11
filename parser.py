@@ -393,7 +393,7 @@ class Parser:
 
     def try_parse_expression(self):
         """尝试解析表达式或赋值语句"""
-        self._trace_enter("try_parse_expression", "ExprOrAssign → ID = Expr | Expr")
+        self._trace_enter("try_parse_expression", "ExprOrAssign → ID = Expr | ExprOrAssign → LValue = Expr | Expr")
         token = self.current_token()
         if token.type == TT_ID:
             next_token = self.peek_token()
@@ -407,6 +407,13 @@ class Parser:
                 self._trace_exit("try_parse_expression", result)
                 return result
         result = self.parse_expression()
+        # 检查是否是数组元素赋值：expr = expr;
+        # 如 a[0] = 1;  parse_expression 返回 ArrayAccessNode 后 current_token 是 =
+        if isinstance(result, (LValueNode, ArrayAccessNode)) and self.current_token().type == TT_ASSIGN:
+            self.advance()  # 消费 =
+            value = self.parse_expression()
+            result = AssignStmtNode(result, value,
+                                    line=result.line, column=result.column)
         self._trace_exit("try_parse_expression", result)
         return result
 

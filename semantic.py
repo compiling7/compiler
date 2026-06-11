@@ -417,7 +417,7 @@ class SemanticAnalyzer:
             if sym is None:
                 self._err(E_UNDEFINED_VAR,
                           f"变量 '{left.name}' 未声明", left)
-                self._visit_expr(node.value)  # 仍访问右值,便于暴露更多错误
+                self._visit_expr(node.value)
                 return
             if sym.kind == "fn":
                 self._err(E_NOT_LVALUE,
@@ -433,8 +433,33 @@ class SemanticAnalyzer:
                           f"赋值类型不匹配：'{left.name}' 为 {sym.type_name}，右值为 {rhs_t}",
                           node)
             sym.initialized = True
+        elif isinstance(left, ArrayAccessNode):
+            # 数组元素赋值：a[i] = expr
+            if isinstance(left.array, LValueNode):
+                sym = self.symbols.lookup(left.array.name)
+                if sym is None:
+                    self._err(E_UNDEFINED_VAR,
+                              f"数组 '{left.array.name}' 未声明", left.array)
+                    self._visit_expr(node.value)
+                    return
+                if not sym.mutable:
+                    self._err(E_NOT_MUTABLE,
+                              f"不可变数组 '{left.array.name}' 的元素不能被赋值", left.array)
+            # 下标必须为 i32
+            idx_t = self._visit_expr(left.index)
+            if idx_t is not None and idx_t != TYPE_I32:
+                self._err(E_TYPE_MISMATCH,
+                          f"数组下标必须为 i32，实际为 {idx_t}", left.index)
+            # 右值类型须与数组元素类型匹配
+            arr_t = self._visit_expr(left.array) or ""
+            rhs_t = self._visit_expr(node.value)
+            if arr_t.startswith("[") and ";" in arr_t:
+                elem_t = arr_t[1:arr_t.index(";")]
+                if rhs_t is not None and rhs_t != elem_t:
+                    self._err(E_TYPE_MISMATCH,
+                              f"数组元素赋值类型不匹配：元素类型为 {elem_t}，右值为 {rhs_t}",
+                              node)
         else:
-            # 左侧非左值已被解析器拦截,这里加一道保险
             self._err(E_NOT_LVALUE, "赋值左值不合法", left)
             self._visit_expr(node.value)
 
