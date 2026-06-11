@@ -192,8 +192,8 @@ class Parser:
         return result
 
     def parse_statement(self):
-        """Statement -> ; | return | let | if | while | for | ID = Expr | Expr"""
-        self._trace_enter("parse_statement", "Statement → ε | return | let | if | while | for | ID = Expr | Expr")
+        """Statement -> ; | return | let | if | while | loop | for | break | continue | ID = Expr | Expr"""
+        self._trace_enter("parse_statement", "Statement → ε | return | let | if | while | loop | for | break | continue | ID = Expr | Expr")
         token = self.current_token()
         if token.type == TT_SEMICOLON:
             self.advance()
@@ -218,6 +218,10 @@ class Parser:
             return result
         if token.type == TT_KEYWORD_FOR:
             result = self.parse_for_stmt()
+            self._trace_exit("parse_statement", result)
+            return result
+        if token.type == TT_KEYWORD_LOOP:
+            result = self.parse_loop_stmt()
             self._trace_exit("parse_statement", result)
             return result
         if token.type == TT_KEYWORD_BREAK:
@@ -361,6 +365,15 @@ class Parser:
         result = ForStmtNode(name, is_mutable, iterable, body,
                              line=for_tok.line, column=for_tok.column)
         self._trace_exit("parse_for_stmt", result)
+        return result
+
+    def parse_loop_stmt(self):
+        """LoopStmt -> loop Block"""
+        self._trace_enter("parse_loop_stmt", "LoopStmt → loop Block")
+        tok = self.expect(TT_KEYWORD_LOOP)
+        body = self.parse_block()
+        result = LoopStmtNode(body, line=tok.line, column=tok.column)
+        self._trace_exit("parse_loop_stmt", result)
         return result
 
     def parse_iterable(self):

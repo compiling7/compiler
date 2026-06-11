@@ -400,6 +400,8 @@ def _ast_to_dict(node):
     elif isinstance(node, ForStmtNode):
         children.append(_ast_to_dict(node.iterable))
         children.append(_ast_to_dict(node.body))
+    elif isinstance(node, LoopStmtNode):
+        children.append(_ast_to_dict(node.body))
     elif isinstance(node, RangeNode):
         children.append(_ast_to_dict(node.start))
         children.append(_ast_to_dict(node.end))

@@ -193,6 +193,15 @@ class ForStmtNode(ASTNode):
         self.body = body  # 循环体 BlockStmtNode
 
 
+class LoopStmtNode(ASTNode):
+    """loop 无限循环语句节点"""
+    node_name = "LoopStmt"
+
+    def __init__(self, body, line: int = 0, column: int = 0):
+        super().__init__(line, column)
+        self.body = body  # 循环体 BlockStmtNode
+
+
 class RangeNode(ASTNode):
     """范围表达式节点: start .. end"""
     node_name = "Range"

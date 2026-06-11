@@ -342,6 +342,13 @@ class SemanticAnalyzer:
             self._loop_depth -= 1
             return
 
+        if isinstance(node, LoopStmtNode):
+            # loop 无条件——一直运行直到遇到 break
+            self._loop_depth += 1
+            self._visit_block(node.body)
+            self._loop_depth -= 1
+            return
+
         if isinstance(node, ForStmtNode):
             # 循环变量定义在循环体作用域内
             if isinstance(node.iterable, RangeNode):

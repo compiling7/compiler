@@ -235,6 +235,9 @@ class IRGenerator:
         if isinstance(node, ForStmtNode):
             self._for(node)
             return
+        if isinstance(node, LoopStmtNode):
+            self._loop(node)
+            return
         if isinstance(node, ExprStmtNode):
             # The parser sometimes wraps an assignment in an ExprStmtNode
             # (e.g. `try_parse_expression` returns AssignStmtNode and
@@ -378,6 +381,27 @@ class IRGenerator:
             # Plain expression iterable (e.g. an array) — degenerate path.
             self._expr(node.iterable)
             self._blk(node.body)
+
+    def _loop(self, node: LoopStmtNode) -> None:
+        """loop { body }
+
+        Aforever-loops the body.  The only way out is a ``break``
+        statement inside the body (or its children).
+        IR:
+            L_start:  body ...
+                      goto L_start
+            L_end:                             ← break jumps here
+        """
+        start = self._label("L_loop_")
+        end   = self._label("L_end_")
+        self._loop_exit_labels.append(end)
+        self._loop_repeat_labels.append(start)
+        self._emit("label", None, None, start)
+        self._blk(node.body)
+        self._emit("goto", None, None, start)
+        self._emit("label", None, None, end)
+        self._loop_repeat_labels.pop()
+        self._loop_exit_labels.pop()
 
     # ---- lvalue helpers ----
 
