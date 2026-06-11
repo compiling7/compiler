@@ -473,7 +473,7 @@ class IRGenerator:
             # + per-index stores.
             elem_names = [self._expr(e) for e in node.elements]
             t = self._temp()
-            self._emit("array_lit", ",".join(elem_names), str(len(elem_names)), t)
+            self._emit("array_lit", ",".join(str(v) for v in elem_names), str(len(elem_names)), t)
             return t
         if isinstance(node, ArrayAccessNode):
             base = self._expr(node.array)
