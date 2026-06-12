@@ -60,6 +60,13 @@ def build(debug=False):
         print(f"\n[!] Missing files: {missing_files}")
         return False
 
+    # Verify compiler_tools directory exists (nasm.exe, GoLink.exe)
+    tools_dir = os.path.join(ROOT, 'compiler_tools')
+    if not os.path.isdir(tools_dir):
+        print("\n[!] 缺少 compiler_tools/ 目录 (需要 nasm.exe 和 GoLink.exe)")
+        print("    请将 nasm.exe 和 GoLink.exe 放入 compiler_tools/ 后重试。")
+        return False
+
     spec_path = os.path.join(ROOT, 'CompilerLab.spec')
 
     print(f"\n  Source: {ROOT}")

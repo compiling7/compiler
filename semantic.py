@@ -383,6 +383,10 @@ class SemanticAnalyzer:
             if isinstance(inner, AssignStmtNode):
                 self._visit_assign(inner)
                 return
+            # 函数调用作为独立语句时,不检查 void used
+            if isinstance(inner, FuncCallNode):
+                self._visit_func_call(inner, as_stmt=True)
+                return
             self._visit_expr(inner)
             return
 
@@ -538,33 +542,7 @@ class SemanticAnalyzer:
             return TYPE_I32
 
         if isinstance(node, FuncCallNode):
-            sym = self.symbols.lookup(node.name)
-            if sym is None or sym.kind != "fn":
-                self._err(E_UNDEFINED_FN,
-                          f"函数 '{node.name}' 未声明", node)
-                for a in node.args:           # 仍访问实参,暴露嵌套错误
-                    self._visit_expr(a)
-                return None
-            if len(node.args) != len(sym.params):
-                self._err(E_ARITY,
-                          f"函数 '{node.name}' 需要 {len(sym.params)} 个参数，"
-                          f"实际传入 {len(node.args)} 个",
-                          node)
-            for i, arg in enumerate(node.args):
-                at = self._visit_expr(arg)
-                if i < len(sym.params) and at is not None:
-                    expect = sym.params[i].type_name
-                    if at != expect:
-                        self._err(E_ARG_TYPE,
-                                  f"函数 '{node.name}' 第 {i + 1} 个参数应为 {expect}，"
-                                  f"实际为 {at}",
-                                  arg)
-            if sym.type_name == TYPE_VOID:    # void 函数不能作为值使用
-                self._err(E_VOID_USED,
-                          f"函数 '{node.name}' 没有返回值，不能作为右值参与运算",
-                          node)
-                return None
-            return sym.type_name
+            return self._visit_func_call(node, as_stmt=False)
 
         if isinstance(node, ArrayLiteralNode):
             if not node.elements:
@@ -598,6 +576,40 @@ class SemanticAnalyzer:
             return None
 
         return None
+
+    def _visit_func_call(self, node: FuncCallNode, as_stmt: bool = False) -> Optional[str]:
+        """访问函数调用表达式。
+
+        as_stmt=True 表示该调用为独立语句（不作为右值），此时不检查 void used。
+        """
+        sym = self.symbols.lookup(node.name)
+        if sym is None or sym.kind != "fn":
+            self._err(E_UNDEFINED_FN,
+                      f"函数 '{node.name}' 未声明", node)
+            for a in node.args:
+                self._visit_expr(a)
+            return None
+        if len(node.args) != len(sym.params):
+            self._err(E_ARITY,
+                      f"函数 '{node.name}' 需要 {len(sym.params)} 个参数，"
+                      f"实际传入 {len(node.args)} 个",
+                      node)
+        for i, arg in enumerate(node.args):
+            at = self._visit_expr(arg)
+            if i < len(sym.params) and at is not None:
+                expect = sym.params[i].type_name
+                if at != expect:
+                    self._err(E_ARG_TYPE,
+                              f"函数 '{node.name}' 第 {i + 1} 个参数应为 {expect}，"
+                              f"实际为 {at}",
+                              arg)
+        if sym.type_name == TYPE_VOID:
+            if not as_stmt:  # 仅在作为右值时报告 void used
+                self._err(E_VOID_USED,
+                          f"函数 '{node.name}' 没有返回值，不能作为右值参与运算",
+                          node)
+            return None
+        return sym.type_name
 
 
 # --------------------------------------------------------------------------- #

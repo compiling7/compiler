@@ -192,7 +192,7 @@ class AssemblyGenerator:
             self._param_idx += 1
 
         elif op == "endfunc":
-            self._emit(f".ret_{self.current_fn}:", indent=False)
+            self._emit(f"ret_{self.current_fn}:", indent=False)
             self._emit("mov rsp, rbp")
             self._emit("pop rbp")
             self._emit("ret")
@@ -263,10 +263,10 @@ class AssemblyGenerator:
             if q.arg1 is not None:
                 src = self._op(q.arg1)
                 self._emit(f"mov rax, {src}")
-            self._emit(f"jmp .ret_{self.current_fn}")
+            self._emit(f"jmp ret_{self.current_fn}")
 
         elif op == "return_void":
-            self._emit(f"jmp .ret_{self.current_fn}")
+            self._emit(f"jmp ret_{self.current_fn}")
 
         # Binary arithmetic
         elif op in ("+", "-", "*", "/"):
@@ -282,7 +282,11 @@ class AssemblyGenerator:
                 self._emit(f"imul rax, {right}")
             elif op == "/":
                 self._emit("cqo")
-                self._emit(f"idiv {right}")
+                # idiv 需要 qword 关键字来指定操作数大小（NASM 内存操作数要求）
+                if right.startswith("[") and right.endswith("]"):
+                    self._emit(f"idiv qword {right}")
+                else:
+                    self._emit(f"idiv {right}")
             self._emit(f"mov {dst}, rax")
 
         # Comparison

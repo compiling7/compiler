@@ -184,6 +184,10 @@ tailwind.config = {
       <span class="material-symbols-outlined text-[17px]">account_tree</span>
       <span class="font-label-caps">Parser</span>
     </button>
+    <button onclick="runAssemblyExec()" class="px-2.5 h-8 flex items-center gap-1.5 text-primary hover:bg-surface-container-high rounded transition-colors text-xs">
+      <span class="material-symbols-outlined text-[17px]">terminal</span>
+      <span class="font-label-caps">Assemble</span>
+    </button>
     <button onclick="runPipeline()" class="px-3 h-8 flex items-center gap-1.5 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors text-xs font-bold">
       <span class="material-symbols-outlined text-[17px]">play_circle</span>
       <span class="font-label-caps">Run All</span>
@@ -203,43 +207,59 @@ tailwind.config = {
   <main class="flex-1 flex overflow-hidden">
 
     <!-- ===== VIEW: Editor ===== -->
-    <div id="view-editor" class="view-panel active flex-1 flex overflow-hidden">
-      <div class="flex-1 flex flex-col overflow-hidden">
-        <div class="h-7 bg-surface-container px-3 flex items-center border-b border-outline-variant flex-shrink-0">
-          <span class="font-label-caps text-on-surface-variant">SOURCE: main.rs</span>
-          <span id="editor-cursor" class="ml-auto font-code-sm text-outline text-[12px]">Ln 1, Col 1</span>
+    <div id="view-editor" class="view-panel active flex-1 flex flex-col overflow-hidden">
+      <!-- 上方区域：编辑器 + 侧边栏 -->
+      <div class="flex-1 flex overflow-hidden">
+        <div class="flex-1 flex flex-col overflow-hidden">
+          <div class="h-7 bg-surface-container px-3 flex items-center border-b border-outline-variant flex-shrink-0">
+            <span class="font-label-caps text-on-surface-variant">SOURCE: main.rs</span>
+            <span id="editor-cursor" class="ml-auto font-code-sm text-outline text-[12px]">Ln 1, Col 1</span>
+          </div>
+          <div class="flex-1 flex overflow-auto font-code-base">
+            <div class="code-gutter w-10 flex flex-col items-end pr-1.5 py-2 bg-surface-container-low text-outline/60 select-none text-[13px] leading-[1.6] overflow-hidden" id="editor-lines"></div>
+            <textarea id="code-editor" class="flex-1 p-3 whitespace-pre bg-surface-container-lowest text-on-surface border-0 font-code-base text-[13px] leading-[1.6]"
+              spellcheck="false" placeholder="// 输入 Rust 代码..." oninput="onEdit()" onscroll="syncGutter()" onkeydown="onTab(event)"></textarea>
+          </div>
         </div>
-        <div class="flex-1 flex overflow-auto font-code-base">
-          <div class="code-gutter w-10 flex flex-col items-end pr-1.5 py-2 bg-surface-container-low text-outline/60 select-none text-[13px] leading-[1.6] overflow-hidden" id="editor-lines"></div>
-          <textarea id="code-editor" class="flex-1 p-3 whitespace-pre bg-surface-container-lowest text-on-surface border-0 font-code-base text-[13px] leading-[1.6]"
-            spellcheck="false" placeholder="// 输入 Rust 代码..." oninput="onEdit()" onscroll="syncGutter()" onkeydown="onTab(event)"></textarea>
-        </div>
-      </div>
-      <!-- Detail panel: Symbol Table + Stats -->
-      <div class="w-detail_w flex-shrink-0 border-l border-outline-variant flex flex-col overflow-hidden bg-surface-container-low">
-        <div class="h-7 bg-surface-container px-3 flex items-center border-b border-outline-variant flex-shrink-0">
-          <span class="font-label-caps text-on-surface-variant">SYMBOLS & STATS</span>
-        </div>
-        <div class="flex-1 overflow-auto">
-          <div class="dsec">
-            <div class="dsec-title">Statistics</div>
-            <div id="editor-stats" class="font-body-sm text-body-sm text-on-surface-variant space-y-1">
-              <div class="flex justify-between"><span>Tokens</span><span class="font-bold text-on-surface" id="st-tokens">—</span></div>
-              <div class="flex justify-between"><span>AST Nodes</span><span class="font-bold text-on-surface" id="st-ast">—</span></div>
-              <div class="flex justify-between"><span>IR Insts</span><span class="font-bold text-on-surface" id="st-ir">—</span></div>
-              <div class="flex justify-between"><span>Errors</span><span class="font-bold text-error" id="st-errs">0</span></div>
+        <!-- Detail panel: Symbol Table + Stats -->
+        <div class="w-detail_w flex-shrink-0 border-l border-outline-variant flex flex-col overflow-hidden bg-surface-container-low">
+          <div class="h-7 bg-surface-container px-3 flex items-center border-b border-outline-variant flex-shrink-0">
+            <span class="font-label-caps text-on-surface-variant">SYMBOLS & STATS</span>
+          </div>
+          <div class="flex-1 overflow-auto">
+            <div class="dsec">
+              <div class="dsec-title">Statistics</div>
+              <div id="editor-stats" class="font-body-sm text-body-sm text-on-surface-variant space-y-1">
+                <div class="flex justify-between"><span>Tokens</span><span class="font-bold text-on-surface" id="st-tokens">—</span></div>
+                <div class="flex justify-between"><span>AST Nodes</span><span class="font-bold text-on-surface" id="st-ast">—</span></div>
+                <div class="flex justify-between"><span>IR Insts</span><span class="font-bold text-on-surface" id="st-ir">—</span></div>
+                <div class="flex justify-between"><span>Errors</span><span class="font-bold text-error" id="st-errs">0</span></div>
+              </div>
+            </div>
+            <div class="dsec">
+              <div class="dsec-title">Symbol Table</div>
+              <table class="w-full text-xs border-collapse" id="editor-sym-table">
+                <thead><tr class="text-outline font-semibold"><th class="text-left py-1 pr-2">Name</th><th class="text-left py-1 pr-2">Kind</th><th class="text-left py-1 pr-2">Type</th><th class="text-left py-1">Mut</th></tr></thead>
+                <tbody id="editor-sym-body" class="font-code-sm text-[12px]"><tr><td colspan="4" class="text-outline py-4 text-center">暂无数据</td></tr></tbody>
+              </table>
+            </div>
+            <div class="dsec">
+              <div class="dsec-title">Output Preview</div>
+              <div id="editor-output" class="font-code-sm text-[12px] text-outline whitespace-pre-wrap">准备好编译代码 — 点击 Run All</div>
             </div>
           </div>
-          <div class="dsec">
-            <div class="dsec-title">Symbol Table</div>
-            <table class="w-full text-xs border-collapse" id="editor-sym-table">
-              <thead><tr class="text-outline font-semibold"><th class="text-left py-1 pr-2">Name</th><th class="text-left py-1 pr-2">Kind</th><th class="text-left py-1 pr-2">Type</th><th class="text-left py-1">Mut</th></tr></thead>
-              <tbody id="editor-sym-body" class="font-code-sm text-[12px]"><tr><td colspan="4" class="text-outline py-4 text-center">暂无数据</td></tr></tbody>
-            </table>
-          </div>
-          <div class="dsec">
-            <div class="dsec-title">Output Preview</div>
-            <div id="editor-output" class="font-code-sm text-[12px] text-outline whitespace-pre-wrap">准备好编译代码 — 点击 Run All</div>
+        </div>
+      </div>
+      <!-- 底部区域：Compiler Diagnostics -->
+      <div class="h-72 border-t border-outline-variant overflow-auto bg-surface-container-low flex-shrink-0">
+        <div class="px-3 py-2 border-b border-outline-variant flex items-center justify-between">
+          <div class="font-label-caps text-on-surface-variant">Compiler Diagnostics</div>
+          <div id="editor-diag-summary" class="font-code-sm text-on-surface-variant"></div>
+        </div>
+        <div class="p-3">
+          <div class="bg-surface rounded-xl border border-outline-variant p-3 overflow-auto max-h-full">
+            <div class="font-semibold mb-3 text-[13px]">Errors & Warnings</div>
+            <div id="editor-issues-list" class="text-[13px]"></div>
           </div>
         </div>
       </div>
@@ -466,29 +486,7 @@ type        = "i32" | "[" type ";" NUM "]"</div>
       </div>
     </div>
 
-    <!-- ===== VIEW: Issues ===== -->
-    <div id="view-issues" class="view-panel flex-1 flex overflow-hidden">
-      <div class="flex-1 flex flex-col overflow-hidden">
-        <div class="h-7 bg-surface-container px-3 flex items-center border-b border-outline-variant flex-shrink-0">
-          <span class="font-label-caps text-on-surface-variant">ERRORS &amp; WARNINGS</span>
-          <span id="issues-count-badge" class="ml-2 hidden"><span class="tb tb-err text-[10px]">0</span></span>
-        </div>
-        <div class="flex-1 overflow-auto p-3" id="issues-list">
-          <div class="text-outline font-body-sm">暂无错误</div>
-        </div>
-      </div>
-      <div class="w-detail_w flex-shrink-0 border-l border-outline-variant flex flex-col overflow-hidden bg-surface-container-low">
-        <div class="h-7 bg-surface-container px-3 flex items-center border-b border-outline-variant flex-shrink-0">
-          <span class="font-label-caps text-on-surface-variant">ERROR DETAIL</span>
-        </div>
-        <div class="flex-1 overflow-auto" id="issues-detail">
-          <div class="dsec">
-            <div class="dsec-title">Selected Error</div>
-            <div id="issues-error-info" class="font-body-sm text-body-sm">选择一个错误查看详情</div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <!-- Issues view removed — now shown in Editor bottom diagnostics panel -->
 
     <!-- ===== VIEW: Semantic ===== -->
     <div id="view-semantic" class="view-panel flex-1 flex overflow-hidden">
@@ -578,6 +576,36 @@ type        = "i32" | "[" type ";" NUM "]"</div>
       </div>
     </div>
 
+    <!-- ===== VIEW: Assembly ===== -->
+    <div id="view-assembly" class="view-panel flex-1 flex overflow-hidden">
+      <div class="flex-1 flex flex-col overflow-hidden">
+        <div class="h-7 bg-surface-container px-3 flex items-center border-b border-outline-variant flex-shrink-0">
+          <span class="font-label-caps text-on-surface-variant">ASSEMBLY CODE (x86-64 NASM)</span>
+          <span id="assembly-count-label" class="ml-auto font-code-sm text-outline text-[12px]"></span>
+        </div>
+        <div class="px-3 py-1.5 border-b border-outline-variant flex flex-wrap gap-2" id="assembly-stat-row"></div>
+        <div class="flex-1 overflow-auto">
+          <div id="assembly-placeholder" class="sem-empty">按 Assemble 按钮执行后查看汇编代码</div>
+          <pre id="assembly-code" class="font-code-sm text-[12px] p-3 whitespace-pre-wrap break-words"></pre>
+        </div>
+      </div>
+      <div class="w-detail_w flex-shrink-0 border-l border-outline-variant flex flex-col overflow-hidden bg-surface-container-low">
+        <div class="h-7 bg-surface-container px-3 flex items-center border-b border-outline-variant flex-shrink-0">
+          <span class="font-label-caps text-on-surface-variant">RUN RESULTS</span>
+        </div>
+        <div class="flex-1 overflow-auto" id="assembly-detail">
+          <div class="dsec">
+            <div class="dsec-title">Console Output</div>
+            <pre id="assembly-run-output" class="font-code-sm text-[12px] whitespace-pre-wrap break-words">按 Assemble 执行后显示结果。</pre>
+          </div>
+          <div class="dsec">
+            <div class="dsec-title">Return Code</div>
+            <pre id="assembly-run-status" class="font-code-sm text-[12px]"></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </main>
 
   <!-- ─── RIGHT SIDEBAR ─── -->
@@ -603,16 +631,15 @@ type        = "i32" | "[" type ";" NUM "]"</div>
       <button onclick="switchView('ast')" data-view="ast" class="nav-btn">
         <span class="material-symbols-outlined nav-icon">data_object</span> AST
       </button>
-      <button onclick="switchView('issues')" data-view="issues" class="nav-btn">
-        <span class="material-symbols-outlined nav-icon">bug_report</span> Issues
-        <span class="nav-badge hidden" id="badge-issues">0</span>
-      </button>
       <button onclick="switchView('semantic')" data-view="semantic" class="nav-btn">
         <span class="material-symbols-outlined nav-icon">rule</span> Semantic
         <span class="nav-badge hidden" id="badge-semantic">0</span>
       </button>
       <button onclick="switchView('ir')" data-view="ir" class="nav-btn">
         <span class="material-symbols-outlined nav-icon">memory</span> IR
+      </button>
+      <button onclick="switchView('assembly')" data-view="assembly" class="nav-btn">
+        <span class="material-symbols-outlined nav-icon">terminal</span> Assembly
       </button>
     </nav>
     <div class="mt-auto border-t border-outline-variant pt-3 px-1.5">
@@ -789,6 +816,38 @@ function saveOutput() {
     lines.push('--- AST ---');
     lines.push(_astToText(S.ast, 0));
   }
+  if (S.quads && S.quads.length) {
+    lines.push('--- Intermediate Code (Quadruples) ---');
+    S.quads.forEach((q, i) => {
+      const a1 = q.arg1 != null ? String(q.arg1) : '_';
+      const a2 = q.arg2 != null ? String(q.arg2) : '_';
+      const r  = q.result != null ? String(q.result) : '_';
+      lines.push(`${String(i).padStart(4)}  (${String(q.op).padEnd(14)} ${a1.padEnd(12)} ${a2.padEnd(12)} ${r})`);
+    });
+    lines.push('');
+  }
+  if (S.assembly) {
+    lines.push('--- Assembly (x86-64 NASM) ---');
+    S.assembly.split('\n').forEach(l => lines.push('  ' + l));
+    lines.push('');
+  }
+  if (S.symbolTable && Object.keys(S.symbolTable).length) {
+    lines.push('--- Symbol Table ---');
+    lines.push('  Name'.padEnd(16) + 'Kind'.padEnd(10) + 'Type'.padEnd(12) + 'Mutable');
+    lines.push('  ' + '-'.repeat(50));
+    for (const [name, info] of Object.entries(S.symbolTable)) {
+      const kind = info.kind || 'var';
+      const type = info.type || '—';
+      const mut = info.mutable ? 'mut' : '—';
+      lines.push(`  ${name.padEnd(14)} ${kind.padEnd(8)} ${type.padEnd(10)} ${mut}`);
+      if (info.params) {
+        info.params.forEach(p => {
+          lines.push(`    param: ${p.name} : ${p.type}${p.mutable ? ' mut' : ''}`);
+        });
+      }
+    }
+    lines.push('');
+  }
   if (S.errors.length) {
     lines.push('--- Errors ---');
     S.errors.forEach(e => lines.push('  ' + e.message));
@@ -847,42 +906,89 @@ async function runParser() {
 async function runPipeline() {
   setStatus('Running pipeline...','hourglass_top',true);
   try {
-    // 每次 Run All 先清掉上次的状态,避免上一次语义/IR 等残留到本次
     clearAll();
-    setStatus('Running pipeline...','hourglass_top',true);  // clearAll 内部 setStatus('Cleared'),这里覆盖回 "Running"
+    setStatus('Running pipeline...','hourglass_top',true);
     const d = await api('pipeline', {source: S.source});
-    if (d.success) {
+    if (d.success && !d.lex_errors && !d.parse_errors) {
+      // 全流程成功，无任何错误
+      S.tokens = d.tokens||[]; S.ast = d.ast; S.trace = d.trace||[]; S.trace_events = d.trace_events||[];
+      S.quads = d.quads||[]; S.assembly = d.assembly||'';
+      S.symbolTable = d.symbol_table||{};
+      S.semantic_errors = [];
+      S.errors = [];
+      if (d.semantic_errors && d.semantic_errors.length) {
+        for (const e of d.semantic_errors) {
+          S.errors.push({code: e.code||'E_SEMANTIC', message: e.message||'', line: e.line||0, column: e.column||0, node: e.node||'', stage: 'Semantic'});
+        }
+      }
+      S.stats = d.stats||{}; S.parsed = true;
+      requestAnimationFrame(() => {
+        try { updateAll(); updateBadges(); updateEditorStats(); renderEditorDiagnostics(); setStatus('Pipeline complete','check_circle'); }
+        catch(e) { setStatus('Render error','error'); console.error('render error:', e); }
+      });
+    } else if (d.lex_errors && d.lex_errors.length) {
+      // 词法错误：无法继续
+      S.tokens=d.tokens||[]; S.ast=null; S.quads=[]; S.assembly=''; S.symbolTable={};
+      S.errors=(d.lex_errors||[]).map(e=>({code:'E_LEX',message:'Lexer: '+e,stage:'Lexer'}));
+      S.semantic_errors=[]; S.stats={}; S.parsed=false;
+      requestAnimationFrame(() => { renderLexer(); renderEditorDiagnostics(); updateBadges(); setStatus('Stopped at Lexer','error'); });
+    } else {
+      // 语法错误（或语义错误）：仍然显示后续阶段的结果
       S.tokens = d.tokens||[]; S.ast = d.ast; S.trace = d.trace||[]; S.trace_events = d.trace_events||[];
       S.quads = d.quads||[]; S.assembly = d.assembly||'';
       S.symbolTable = d.symbol_table||{};
       S.semantic_errors = d.semantic_errors||[];
-      S.errors = S.semantic_errors.map(e => ({code:e.code, message:e.message, line:e.line, column:e.column, node:e.node}));
-      S.stats = d.stats||{}; S.parsed = true;
-      switchView('ast');
-      requestAnimationFrame(() => {
-        try {
-          updateAll(); updateBadges(); updateEditorStats();
-          setStatus('Pipeline complete','check_circle');
-        } catch(e) {
-          setStatus('Render error','error');
-          console.error('render error:', e);
+      S.errors = [];
+      if (d.lex_errors && d.lex_errors.length) {
+        for (const e of d.lex_errors) {
+          S.errors.push({code: 'E_LEX', message: 'Lexer: '+e, line: 0, column: 0, node: '', stage: 'Lexer'});
         }
+      }
+      if (d.parse_errors && d.parse_errors.length) {
+        for (const e of d.parse_errors) {
+          S.errors.push({code: 'E_PARSE', message: 'Parser: '+e, line: 0, column: 0, node: '', stage: 'Parser'});
+        }
+      }
+      if (d.semantic_errors && d.semantic_errors.length) {
+        for (const e of d.semantic_errors) {
+          S.errors.push({code: e.code||'E_SEMANTIC', message: e.message||'', line: e.line||0, column: e.column||0, node: e.node||'', stage: 'Semantic'});
+        }
+      }
+      S.stats = d.stats||{}; S.parsed = true;
+      requestAnimationFrame(() => {
+        try { updateAll(); updateBadges(); updateEditorStats(); renderEditorDiagnostics(); setStatus('Pipeline completed with errors','error'); }
+        catch(e) { setStatus('Render error','error'); console.error('render error:', e); }
       });
-    } else if (d.stage==='lexer') {
-      S.tokens=d.tokens||[]; S.errors=(d.lex_errors||[]).map(e=>({message:'Lexer: '+e}));
-      switchView('lexer');
-      requestAnimationFrame(() => { renderLexer(); renderIssues(); updateBadges(); setStatus('Stopped at Lexer','error'); });
-    } else if (d.stage==='parser') {
-      S.tokens=d.tokens||[]; S.trace=d.trace||[]; S.errors=(d.parse_errors||[]).map(e=>({message:'Parser: '+e}));
-      switchView('parser');
-      requestAnimationFrame(() => { renderIssues(); updateBadges(); setStatus('Stopped at Parser','error'); });
-    } else {
-      setStatus('Pipeline failed','error');
-      addError(d.error||'Error');
     }
   } catch(e) {
     setStatus('Pipeline crashed','error');
     console.error('runPipeline crashed:', e);
+  }
+}
+
+async function runAssemblyExec() {
+  setStatus('Assembling & running...','hourglass_top',true);
+  try {
+    const d = await api('asmrun', {source: S.source});
+    if (d.success) {
+      S.assembly = d.assembly || '';
+      S.quads = d.quads || [];
+      S.assembly_run = d.run_result || {};
+      S.tokens = d.tokens || S.tokens;
+      S.ast = d.ast || S.ast;
+      S.symbolTable = d.symbol_table || S.symbolTable;
+      S.semantic_errors = d.semantic_errors || S.semantic_errors;
+      S.parsed = true;
+      switchView('assembly');
+      requestAnimationFrame(() => { renderAssembly(); updateBadges(); setStatus('Assembly run complete','check_circle'); });
+    } else {
+      S.errors = d.errors || [{message:d.error||'Assembly failed', stage:'Assembly'}];
+      renderEditorDiagnostics();
+      setStatus('Assembly failed','error');
+    }
+  } catch(e) {
+    setStatus('Assembly crashed','error');
+    console.error('runAssemblyExec crashed:', e);
   }
 }
 
@@ -1232,11 +1338,11 @@ function resetAST() { if(S.astZoom) d3.select('#ast-svg').transition().duration(
 // ═══════════════════════════════════════════
 function renderIssues() {
   const list = document.getElementById('issues-list');
+  if (!list) return;  // issues view 已移除
   if (S.errors.length === 0) {
     list.innerHTML = '<div class="text-green-600 font-body-sm flex items-center gap-2"><span class="material-symbols-outlined text-[16px]">check_circle</span>No errors</div>';
   } else {
     list.innerHTML = S.errors.map((e,i) => {
-      // S.errors 中的条目来自词法/语法/语义阶段,全部视为 Error
       return `<div class="flex items-start gap-2 px-2 py-2 bg-error-container/30 rounded mb-1 cursor-pointer hover:opacity-80" onclick="showErrorDetail(${i})">
         <span class="material-symbols-outlined text-[16px] text-error">error</span>
         <span class="font-code-sm text-[13px] text-error">${escHtml(e.message)}</span>
@@ -1247,12 +1353,55 @@ function renderIssues() {
 
 function showErrorDetail(idx) {
   const e = S.errors[idx];
-  document.getElementById('issues-error-info').innerHTML = `
+  if (!e) return;
+  const target = document.getElementById('issues-error-info') || document.getElementById('sem-error-info');
+  if (!target) return;
+  target.innerHTML = `
     <div class="flex justify-between mb-1"><span class="text-outline">#</span><span>${idx}</span></div>
     <div class="flex justify-between mb-1"><span class="text-outline">Severity</span><span class="text-error">Error</span></div>
     ${e.code ? `<div class="flex justify-between mb-1"><span class="text-outline">Code</span><span class="font-mono text-[11px]">${escHtml(e.code)}</span></div>` : ''}
     ${(e.line||e.column) ? `<div class="flex justify-between mb-1"><span class="text-outline">位置</span><span class="font-mono text-[11px] whitespace-nowrap">第 ${e.line||'?'} 行,第 ${e.column||'?'} 列</span></div>` : ''}
     <div class="mt-2 p-2 bg-error-container/30 rounded font-code-sm text-[13px]">${escHtml(e.message)}</div>`;
+}
+
+function renderEditorDiagnostics() {
+  const list = document.getElementById('editor-issues-list');
+  const summary = document.getElementById('editor-diag-summary');
+  const issues = [];
+  if (S.errors && S.errors.length) {
+    for (const e of S.errors) {
+      issues.push({
+        stage: e.stage || 'General',
+        message: e.message || '',
+        code: e.code || '',
+        line: e.line || 0,
+        column: e.column || 0,
+      });
+    }
+  }
+  if (S.semantic_errors && S.semantic_errors.length) {
+    for (const e of S.semantic_errors) {
+      issues.push({ stage: 'Semantic', message: e.message || '', code: e.code || '', line: e.line || 0, column: e.column || 0 });
+    }
+  }
+  const counts = issues.reduce((acc, issue) => {
+    acc[issue.stage] = (acc[issue.stage] || 0) + 1;
+    return acc;
+  }, {});
+  if (issues.length === 0) {
+    summary.innerHTML = '<span class="flex items-center gap-1"><span class="material-symbols-outlined text-[16px] text-green-600">check_circle</span>No issues</span>';
+    list.innerHTML = '<div class="flex items-center gap-2 text-green-700"><span class="material-symbols-outlined text-[20px]">check_circle</span><span class="text-[15px]">无错误或警告</span></div>';
+  } else {
+    const countText = Object.entries(counts).map(([k,v]) => `${k}: ${v}`).join(' · ');
+    summary.innerHTML = '<span class="flex items-center gap-1"><span class="material-symbols-outlined text-[16px] text-error">error</span>' + escHtml(countText) + '</span>';
+    list.innerHTML = issues.map((e,i) => {
+      return `<div class="p-3 rounded-lg border border-outline-variant bg-surface-container text-[13px] mb-2">
+        <div class="flex items-center gap-2 mb-1"><span class="material-symbols-outlined text-[16px] text-error">error</span><span class="font-semibold">${escHtml(e.stage)}</span><span class="text-outline text-[12px] ml-auto">${e.code || ''}</span></div>
+        <div class="text-[13px] mb-1 ml-6">${escHtml(e.message)}</div>
+        <div class="text-outline text-[11px] ml-6">${e.line ? `Line ${e.line}, Col ${e.column}` : ''}</div>
+      </div>`;
+    }).join('');
+  }
 }
 
 // ═══════════════════════════════════════════
@@ -1467,6 +1616,38 @@ function explainQuad(q) {
   }
 }
 
+function renderAssembly() {
+  const code = S.assembly || '';
+  const panel = document.getElementById('assembly-code');
+  const placeholder = document.getElementById('assembly-placeholder');
+  const statRow = document.getElementById('assembly-stat-row');
+  const label = document.getElementById('assembly-count-label');
+  const out = document.getElementById('assembly-run-output');
+  const status = document.getElementById('assembly-run-status');
+  const lines = code ? code.split('\n') : [];
+  const nonEmpty = lines.filter(l => l.trim() !== '');
+  statRow.innerHTML = `
+    <div class="ir-stat-pill"><b>${lines.length}</b><span>总行数</span></div>
+    <div class="ir-stat-pill"><b>${nonEmpty.length}</b><span>非空行</span></div>`;
+  label.textContent = code ? `${nonEmpty.length} instructions` : '';
+  if (!code) {
+    placeholder.style.display = 'block';
+    panel.textContent = '';
+  } else {
+    placeholder.style.display = 'none';
+    panel.textContent = code;
+  }
+  if (S.assembly_run) {
+    const r = S.assembly_run;
+    const runText = r.success ? `stdout:\n${r.stdout || ''}\nstderr:\n${r.stderr || ''}` : `Run failed: ${r.error || 'unknown'}${r.stderr ? '\n' + r.stderr : ''}`;
+    out.textContent = runText;
+    status.textContent = r.return_code != null ? `Return code: ${r.return_code}` : '';
+  } else {
+    out.textContent = '按 Assemble 执行后显示结果。';
+    status.textContent = '';
+  }
+}
+
 // ═══════════════════════════════════════════
 // Update All
 // ═══════════════════════════════════════════
@@ -1477,6 +1658,7 @@ function updateAll() {
   renderIssues();
   renderSemantic();
   renderIR();
+  renderAssembly();
   updateEditorStats();
 }
 
@@ -1509,12 +1691,11 @@ function updateEditorStats() {
 function updateBadges() {
   const tc = S.tokens.filter(t=>t.type!=='EOF').length;
   const b = document.getElementById('badge-lexer');
-  if (tc > 0) { b.classList.remove('hidden'); b.textContent = tc; } else b.classList.add('hidden');
+  if (b) { if (tc > 0) { b.classList.remove('hidden'); b.textContent = tc; } else b.classList.add('hidden'); }
   const bi = document.getElementById('badge-issues');
-  if (S.errors.length > 0) { bi.classList.remove('hidden'); bi.textContent = S.errors.length; } else bi.classList.add('hidden');
-  document.getElementById('issues-count-badge').classList.toggle('hidden', S.errors.length === 0);
-  const cb = document.getElementById('issues-count-badge').querySelector('span');
-  if (cb) cb.textContent = S.errors.length;
+  if (bi) { if (S.errors.length > 0) { bi.classList.remove('hidden'); bi.textContent = S.errors.length; } else bi.classList.add('hidden'); }
+  const icb = document.getElementById('issues-count-badge');
+  if (icb) { icb.classList.toggle('hidden', S.errors.length === 0); const cb = icb.querySelector('span'); if (cb) cb.textContent = S.errors.length; }
   const bs = document.getElementById('badge-semantic');
   if (bs) {
     const cnt = S.semantic_errors ? S.semantic_errors.length : 0;
@@ -1537,7 +1718,7 @@ function $set(id, prop, value) { const e = document.getElementById(id); if (e) e
 function $style(id, prop, value) { const e = document.getElementById(id); if (e) e.style[prop] = value; }
 
 function clearAll() {
-  S.tokens=[]; S.ast=null; S.trace=[]; S.trace_events=[]; S.quads=[]; S.assembly='';
+  S.tokens=[]; S.ast=null; S.trace=[]; S.trace_events=[]; S.quads=[]; S.assembly=''; S.assembly_run=null;
   S.symbolTable={}; S.errors=[]; S.semantic_errors=[]; S.stats={}; S.parsed=false;
   S.lrStep=0; S.lrPlaying=false; if(S.lrTimer){clearInterval(S.lrTimer);S.lrTimer=null;}
   $set('lexer-tbody','innerHTML','');
@@ -1557,11 +1738,19 @@ function clearAll() {
   $set('ir-stat-row','innerHTML','');
   $set('ir-count-label','textContent','');
   $style('ir-placeholder','display','block');
+  $set('assembly-code','textContent','');
+  $set('assembly-count-label','textContent','');
+  $set('assembly-stat-row','innerHTML','');
+  $style('assembly-placeholder','display','block');
+  $set('assembly-run-output','textContent','按 Assemble 执行后显示结果。');
+  $set('assembly-run-status','textContent','');
   $set('editor-output','innerHTML','Ready');
   $set('status-bar-info','textContent','');
   const es = document.getElementById('editor-stats');
   if (es) es.querySelectorAll('span:not(.text-error)').forEach(s => s.textContent = '—');
   $set('editor-sym-body','innerHTML','<tr><td colspan="4" class="text-outline py-4 text-center">暂无数据</td></tr>');
+  $set('editor-issues-list','innerHTML','');
+  $set('editor-diag-summary','innerHTML','');
   updateBadges(); setStatus('Cleared','delete_sweep');
 }
 

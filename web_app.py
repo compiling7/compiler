@@ -3,6 +3,24 @@
 import os
 import json
 import sys
+import shutil
+import subprocess
+import tempfile
+
+# ── compiler_tools 路径查找 ──────────────────────────
+# PyInstaller 打包后文件在 sys._MEIPASS 下解压；
+# 开发模式下在脚本同级目录。
+# 找到后加入 PATH 使 nasm.exe / golink.exe 可被发现。
+if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+    # PyInstaller 打包模式
+    _tools_dir = os.path.join(sys._MEIPASS, "compiler_tools")
+else:
+    # 开发模式 / 普通 Python 运行
+    _tools_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "compiler_tools")
+
+if os.path.isdir(_tools_dir):
+    os.environ["PATH"] = _tools_dir + os.pathsep + os.environ.get("PATH", "")
+_TOOLS_DIR = _tools_dir  # 供后续 _assemble_and_run_native 引用
 
 from flask import Flask, request, jsonify, send_from_directory, make_response
 
@@ -217,6 +235,149 @@ def api_asm():
         return jsonify({"success": False, "error": str(e)}), 400
 
 
+# ── Assembly Run API ──────────────────────────
+
+@app.route("/api/asmrun", methods=["POST"])
+def api_asmrun():
+    data = request.get_json()
+    source = data.get("source", "")
+    try:
+        lexer = Lexer(source)
+        tokens = lexer.tokenize()
+        parser = Parser(source)
+        ast, parse_errors = parser.parse()
+        if parse_errors:
+            return jsonify({
+                "success": False,
+                "error": "语法分析失败",
+                "stage": "parser",
+                "parse_errors": parse_errors,
+                "errors": [ {"message": err, "stage": "Parser"} for err in parse_errors ],
+            }), 400
+
+        analyzer = SemanticAnalyzer()
+        sem_errors = analyzer.analyze(ast)
+        symbol_table = _extract_symbol_table(analyzer)
+
+        ir_gen = IRGenerator()
+        quads = ir_gen.generate(ast)
+        asm_gen = AssemblyGenerator(quads)
+        asm_code = asm_gen.generate()
+
+        run_result = _assemble_and_run_native(asm_code)
+
+        return jsonify({
+            "success": True,
+            "tokens": [_token_to_dict(t) for t in tokens],
+            "ast": _ast_to_dict(ast),
+            "symbol_table": symbol_table,
+            "semantic_errors": [_semantic_error_to_dict(e) for e in sem_errors],
+            "errors": [_semantic_error_to_dict(e) for e in sem_errors],
+            "quads": [_quad_to_dict(q) for q in quads],
+            "assembly": asm_code,
+            "run_result": run_result,
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e), "stage": "runtime"}), 400
+
+
+def _run_command(cmd, cwd):
+    try:
+        proc = subprocess.run(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=20)
+        return {
+            "success": proc.returncode == 0,
+            "stdout": proc.stdout,
+            "stderr": proc.stderr,
+            "return_code": proc.returncode,
+        }
+    except subprocess.TimeoutExpired as e:
+        return {"success": False, "stdout": e.stdout or "", "stderr": e.stderr or "Timeout", "return_code": None, "error": "timeout"}
+    except Exception as e:
+        return {"success": False, "stdout": "", "stderr": "", "return_code": None, "error": str(e)}
+
+
+def _assemble_and_run_native(asm_code):
+    tempdir = tempfile.mkdtemp()
+    asm_path = os.path.join(tempdir, "prog.asm")
+    with open(asm_path, "w", encoding="utf-8") as f:
+        f.write(asm_code)
+
+    # 首先寻找本地工具链
+    # 优先使用 shutil.which（查找 PATH）；若未找到则 fallback 到 _TOOLS_DIR
+    nasm_candidates = ["nasm.exe", "nasm"]
+    nasm_exe = None
+    for c in nasm_candidates:
+        nasm_exe = shutil.which(c)
+        if nasm_exe:
+            break
+    if nasm_exe is None and _TOOLS_DIR:
+        for c in nasm_candidates:
+            candidate = os.path.join(_TOOLS_DIR, c)
+            if os.path.isfile(candidate):
+                nasm_exe = candidate
+                break
+
+    if nasm_exe is None:
+        return {"success": False, "error": "未找到 nasm/nasm.exe"}
+
+    is_windows = sys.platform.startswith("win") or nasm_exe.endswith(".exe")
+
+    if is_windows:
+        obj_name = "prog.obj"
+        out_name = "prog.exe"
+        fmt = "win64"
+        asm_cmd = [nasm_exe, "-f", fmt, "-o", obj_name, "prog.asm"]
+        result = _run_command(asm_cmd, cwd=tempdir)
+        if not result["success"]:
+            return {**result, "error": result.get("stderr") or "nasm 汇编失败"}
+
+        # Windows 下首选 golink.exe
+        golink_exe = shutil.which("golink.exe")
+        if golink_exe is None and _TOOLS_DIR:
+            golink_candidate = os.path.join(_TOOLS_DIR, "GoLink.exe")
+            if os.path.isfile(golink_candidate):
+                golink_exe = golink_candidate
+        if golink_exe:
+            # golink: golink.exe prog.obj /console /entry:main
+            link_cmd = [golink_exe, obj_name, "/console", "/entry:main"]
+            result = _run_command(link_cmd, cwd=tempdir)
+            if not result["success"]:
+                return {**result, "error": result.get("stderr") or "golink 链接失败"}
+        else:
+            # 后备：尝试 gcc / clang（如 MinGW）
+            linker = shutil.which("gcc.exe") or shutil.which("clang.exe") or shutil.which("gcc") or shutil.which("clang")
+            if linker is None:
+                return {"success": False, "error": "未找到 golink.exe 或 gcc/clang 链接器"}
+            link_cmd = [linker, "-o", out_name, obj_name]
+            result = _run_command(link_cmd, cwd=tempdir)
+            if not result["success"]:
+                return {**result, "error": result.get("stderr") or "链接失败"}
+
+        exec_path = os.path.join(tempdir, out_name)
+        run_result = _run_command([exec_path], cwd=tempdir)
+        return run_result
+    else:
+        obj_name = "prog.o"
+        out_name = "prog"
+        fmt = "elf64"
+        asm_cmd = [nasm_exe, "-f", fmt, "-o", obj_name, "prog.asm"]
+        result = _run_command(asm_cmd, cwd=tempdir)
+        if not result["success"]:
+            return {**result, "error": result.get("stderr") or "nasm 汇编失败"}
+
+        linker = shutil.which("gcc") or shutil.which("clang")
+        if linker is None:
+            return {"success": False, "error": "未找到 gcc 或 clang 链接器"}
+        link_cmd = [linker, "-no-pie", "-o", out_name, obj_name]
+        result = _run_command(link_cmd, cwd=tempdir)
+        if not result["success"]:
+            return {**result, "error": result.get("stderr") or "链接失败"}
+
+        exec_path = os.path.join(tempdir, "./" + out_name)
+        run_result = _run_command([exec_path], cwd=tempdir)
+        return run_result
+
+
 # ── Full Pipeline API ──────────────────────────
 
 @app.route("/api/pipeline", methods=["POST"])
@@ -244,27 +405,21 @@ def api_pipeline():
 
         result["trace"] = tracer.get_log()
         result["trace_events"] = [_trace_event_to_dict(e) for e in tracer.events]
-
-        if parse_errors:
-            result["success"] = False
-            result["stage"] = "parser"
-            result["parse_errors"] = parse_errors
-            return jsonify(result), 200
-
+        result["parse_errors"] = parse_errors
         result["ast"] = _ast_to_dict(ast) if ast else None
 
-        # 3. Semantic Analysis
+        # 3. Semantic Analysis (continue even if parse_errors exist)
         analyzer = SemanticAnalyzer()
         sem_errors = analyzer.analyze(ast)
         result["symbol_table"] = _extract_symbol_table(analyzer)
         result["semantic_errors"] = [_semantic_error_to_dict(e) for e in sem_errors]
 
-        # 4. IR Generation
+        # 4. IR Generation (continue even if previous errors exist)
         ir_gen = IRGenerator()
         quads = ir_gen.generate(ast)
         result["quads"] = [_quad_to_dict(q) for q in quads]
 
-        # 5. Assembly Generation
+        # 5. Assembly Generation (continue even if previous errors exist)
         asm_gen = AssemblyGenerator(quads)
         asm_code = asm_gen.generate()
         result["assembly"] = asm_code
@@ -272,7 +427,14 @@ def api_pipeline():
         # 6. Statistics
         result["stats"] = _compute_stats(ast, tokens, quads)
 
-        result["success"] = True
+        # 7. Determine overall success: only lex errors block completely
+        has_lex_errors = bool(result.get("lex_errors"))
+        has_parse_errors = bool(parse_errors)
+        result["success"] = not has_lex_errors
+        if has_lex_errors:
+            result["stage"] = "lexer"
+        elif has_parse_errors:
+            result["stage"] = "parser"
         return jsonify(result), 200
 
     except Exception as e:
